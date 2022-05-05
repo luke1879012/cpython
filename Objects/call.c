@@ -258,6 +258,7 @@ static PyObject* _Py_HOT_FUNCTION
 function_code_fastcall(PyCodeObject *co, PyObject *const *args, Py_ssize_t nargs,
                        PyObject *globals)
 {
+    //栈帧对象
     PyFrameObject *f;
     PyThreadState *tstate = _PyThreadState_GET();
     PyObject **fastlocals;
