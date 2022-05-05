@@ -260,6 +260,7 @@ function_code_fastcall(PyCodeObject *co, PyObject *const *args, Py_ssize_t nargs
 {
     //栈帧对象
     PyFrameObject *f;
+    //线程状态对象
     PyThreadState *tstate = _PyThreadState_GET();
     PyObject **fastlocals;
     Py_ssize_t i;
@@ -271,6 +272,11 @@ function_code_fastcall(PyCodeObject *co, PyObject *const *args, Py_ssize_t nargs
        take builtins without sanity checking them.
        */
     assert(tstate != NULL);
+
+    //创建与函数对应的PyFrameObject
+    //我们看到参数是co，所以是根据PyCodeObject来创建的
+    //然后还有一个globals，表示global名字空间
+    //因此最后没有PyFunctionObject什么事，它只是起到一个输送的作用
     f = _PyFrame_New_NoTrack(tstate, co, globals, NULL);
     if (f == NULL) {
         return NULL;
@@ -278,12 +284,23 @@ function_code_fastcall(PyCodeObject *co, PyObject *const *args, Py_ssize_t nargs
 
     fastlocals = f->f_localsplus;
 
+    //nargs 表示参数个数，args就是call_function里面 stack
+    //而 stack 此时指向运行时栈中的第一个参数
+    //所以这里的for循环就是将运行时栈中的参数拷贝到局部变量对应的内存中
+    //因为 f_localsplus 分别用于：局部变量、cell对象、free对象、运行时栈
     for (i = 0; i < nargs; i++) {
         Py_INCREF(*args);
         fastlocals[i] = *args++;
     }
+
+    //调用PyEval_EvalFrameEx、进而调用_PyEval_EvalFrameDefault
+    //以新创建的栈帧为执行环境，执行内部的字节码
+    //将函数的返回值赋值给 result
     result = PyEval_EvalFrameEx(f,0);
 
+    //如果 f 的引用计数大于 1，说明栈帧被保存起来了
+    //引用计数减一之后，由于不会被销毁，所以还要被 GC 跟踪
+    //之所以要被 GC 跟踪，是因为栈帧是可变对象
     if (Py_REFCNT(f) > 1) {
         Py_DECREF(f);
         _PyObject_GC_TRACK(f);

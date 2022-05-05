@@ -1331,6 +1331,7 @@ main_loop:
         }
 
         case TARGET(LOAD_FAST): {
+            //从fastlocals中获取索引为oparg的值
             PyObject *value = GETLOCAL(oparg);
             if (value == NULL) {
                 format_exc_check_arg(tstate, PyExc_UnboundLocalError,
@@ -1353,7 +1354,9 @@ main_loop:
 
         case TARGET(STORE_FAST): {
             PREDICTED(STORE_FAST);
+            //弹出元素
             PyObject *value = POP();
+            //将索引为oparg的元素设置为value
             SETLOCAL(oparg, value);
             FAST_DISPATCH();
         }
