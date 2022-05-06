@@ -4055,6 +4055,36 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
            PyObject *kwdefs, PyObject *closure,
            PyObject *name, PyObject *qualname)
 {
+    /* 核心逻辑
+    1）获取所有通过位置参数传递的参数个数，然后循环遍历将它们从运行时栈依次拷贝
+       到 f_localsplus 指定的位置中；
+    
+    2）计算出可以通过位置参数传递的参数个数，如果"实际传递的位置参数的个数" 大于 
+       "可以通过位置参数传递的参数个数"，那么会检测是否存在 *args。如果存在，
+       那么将多余的位置参数拷贝到一个元组中；不存在，则报错：
+       TypeError: function() takes 'm' positional argument but 'n' were given，
+       其中 n 大于 m，表示接收了多个位置参数；
+    
+    3）如果实际传递的位置参数个数小于等于可以通过位置参数传递的参数个数，
+       那么程序继续往下执行，检测关键字参数，它是通过两个数组来实现的，
+       参数名和值是分开存储的；
+    
+    4）然后进行遍历，两层 for 循环，第一层 for 循环遍历存放关键字参数名的数组，
+       第二层遍历符号表，会将传递参数名和符号表中的每一个符号进行比较；
+    
+    5）如果指定了不在符号表中的参数名，那么会检测是否定义了 **kwargs，如果没有则报错：
+       TypeError: function() got an unexpected keyword argument 'xxx'，
+       接收了一个不期望的参数 xxx；如果定义了 **kwargs，那么会设置在字典中；
+    
+    6）如果参数名在符号表中存在，那么跳转到 kw_found 标签，然后获取该符号对应的 value。
+       如果 value 不为 NULL，那么证明该参数已经通过位置参数传递了，会报错：
+       TypeError: function() got multiple values for argument 'xxx'，
+       提示函数的参数 xxx 接收了多个值；
+    
+    7）最终所有的参数都会存在 f_localsplus 中，然后检测是否存在对应的 value 为 NULL 的符号，
+       如果存在，那么检测是否具有默认值，有则使用默认值，没有则报错；
+    */
+
     // PyCodeObject对象
     PyCodeObject* co = (PyCodeObject*)_co;
     // 栈帧
@@ -4095,19 +4125,24 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
     // 如果他与0x04机型"与运算"结果为空，说明有*args
     /* Create a dictionary for keyword parameters (**kwags) */
     if (co->co_flags & CO_VARKEYWORDS) {
-        // 申请字典，用于 kwargs
+        // 创建字典，用于 kwargs
         kwdict = PyDict_New();
         if (kwdict == NULL)
             goto fail;
         // 我们说参数是有顺序的，*args和**kwargs在最后面
         i = total_args;
+        // 如果还有 *args，那么i要加上1
+        // 因为无论何时，关键字参数都要在位置参数后面
         if (co->co_flags & CO_VARARGS) {
             i++;
         }
-        // 如果不存在*args，
+        // 如果没有 *args，那么kwdict要处于索引为 i 的位置
+        // 如果有 *args，那么kwdict处于索引为 i + 1 的位置
+        // 然后放到f_localsplus中    
         SETLOCAL(i, kwdict);
     }
     else {
+        // 如果没有 **kwargs 的话，那么为NULL
         kwdict = NULL;
     }
 
@@ -4134,17 +4169,28 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
     }
 
     // 如果有 *args
+    // 关键来了，将多余的位置参数拷贝到args里面去
     /* Pack other positional arguments into the *args argument */
     if (co->co_flags & CO_VARARGS) {
+        // 申请一个容量为 argcount - n 的元组
         u = _PyTuple_FromArray(args + n, argcount - n);
         if (u == NULL) {
             goto fail;
         }
         // 设置在 total_args 的位置，也就是 **kwargs 的前面
+        // 放到f -> f_localsplus里面去
         SETLOCAL(total_args, u);
     }
 
     // 遍历关键字参数
+    // 下面就是拷贝扩展关键字参数
+    // 使用索引遍历，按照顺序依次取出
+    // 通过比较传递的关键字参数的符号是否已经出现在函数定义的参数中
+    // 来判断传递的这个参数究竟是普通的关键字参数，还是扩展关键字参数
+    // 比如:def foo(a, b, c, **kwargs)，foo(1, 2, c=3, d=4)
+    // 那么显然关键字参数为c=3和d=4
+    // 由于c已经出现在了函数定义的参数中，所以c就是一个普通的关键字参数
+    // 但是d没有，因此d同时也是扩展关键字参数，要设置到kwargs这个字典里面
     /* Handle keyword arguments passed as two strided arrays */
     kwcount *= kwstep;
     for (i = 0; i < kwcount; i += kwstep) {
@@ -4197,6 +4243,9 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         }
 
         assert(j >= total_args);
+        // 走到这里，说明 for循环不成立，也就是参数不在符号表中
+        // 说明传入了不存在的关键字参数，这个时候要检测 **kwargs
+        // 如果kwdict是NULL，说明函数没有 **kwargs，那么就直接报错了
         if (kwdict == NULL) {
 
             // 如果符号表中没有出现指定的符号
@@ -4207,13 +4256,15 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
             {
                 goto fail;
             }
-
+            // 也就是下面这个错误，{func} 收到了一个预料之外的关键字参数
             _PyErr_Format(tstate, PyExc_TypeError,
                           "%U() got an unexpected keyword argument '%S'",
                           co->co_name, keyword);
             goto fail;
         }
-
+        // kwdict 不为 NULL，证明定义了 **kwargs
+        // 将参数名和参数值都设置到这个字典里面去
+        // 然后continue进入下一个关键字参数的判断逻辑
         if (PyDict_SetItem(kwdict, keyword, value) == -1) {
             goto fail;
         }
@@ -4226,8 +4277,25 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
             _PyErr_Format(tstate, PyExc_TypeError,
                           "%U() got multiple values for argument '%S'",
                           co->co_name, keyword);
+            // 比如说：def foo(a, b, c=1, d=2)
+            // 如果传递 foo(1, 2, c=3)，那么肯定没问题
+            /* 
+               因为开始会把位置参数拷贝到f_localsplus里面
+               所以此时f_localsplus（第一段内存）是 [1, 2, NULL, NULL]
+               然后设置关键字参数的时候，此时的j对应索引为2
+               那么GETLOCAL(j)是NULL，上面的if不成立所以不会报错
+            */
+            // 但如果这样传递，foo(1, 2, 3, c=3)
+            // 那么 f_localsplus则是[1, 2, 3, NULL]
+            // GETLOCAL(j)是 3，不为NULL，说明 j 这个位置已经被占了
+            // 既然有值了，那么关键字参数就不能传递了，否则就重复了
             goto fail;
         }
+        // 将 value 设置在 f_localsplus 中索引为 j 的位置
+        // 还是那句话，f_localsplus存储的值（PyObject *）、
+        // 和符号表中每一个符号对应的值，在顺序上是保持一致的
+        // 比如变量 c 在符号表中索引为 2 的位置
+        // 那么f_localsplus[2]保存的就是变量 c 的值  
         Py_INCREF(value);
         SETLOCAL(j, value);
     }
