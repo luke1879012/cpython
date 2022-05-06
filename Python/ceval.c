@@ -3572,7 +3572,9 @@ main_loop:
         }
 
         case TARGET(MAKE_FUNCTION): {
+            // 弹出栈顶元素，得到函数名
             PyObject *qualname = POP();
+            // 弹出栈顶元素，得到PyCodeObject
             PyObject *codeobj = POP();
             PyFunctionObject *func = (PyFunctionObject *)
                 PyFunction_NewWithQualName(codeobj, f->f_globals, qualname);
@@ -4053,15 +4055,23 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
            PyObject *kwdefs, PyObject *closure,
            PyObject *name, PyObject *qualname)
 {
+    // PyCodeObject对象
     PyCodeObject* co = (PyCodeObject*)_co;
+    // 栈帧
     PyFrameObject *f;
+    // 返回值
     PyObject *retval = NULL;
+    // f -> localsplus、co -> co_freevars
+    // freevars和闭包相关，暂时不做讨论
     PyObject **fastlocals, **freevars;
     PyObject *x, *u;
+    // 参数总个数： co->co_argcount + co->co_kwonlyargcount
+    // 也就是：可以通过位置参数传递的参数个数 + 只能通过关键字参数传递的参数个数
     const Py_ssize_t total_args = co->co_argcount + co->co_kwonlyargcount;
     Py_ssize_t i, j, n;
     PyObject *kwdict;
 
+    // 获取线程状态对象
     PyThreadState *tstate = _PyThreadState_GET();
     assert(tstate != NULL);
 
@@ -4071,6 +4081,7 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         return NULL;
     }
 
+    // 创建栈帧
     /* Create the frame */
     f = _PyFrame_New_NoTrack(tstate, co, globals, locals);
     if (f == NULL) {
@@ -4079,51 +4090,75 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
     fastlocals = f->f_localsplus;
     freevars = f->f_localsplus + co->co_nlocals;
 
+    // 还记得这个co_flags吗？
+    // 如果它和0x08进行"与运算"结果为真，说明有**kwargs
+    // 如果他与0x04机型"与运算"结果为空，说明有*args
     /* Create a dictionary for keyword parameters (**kwags) */
     if (co->co_flags & CO_VARKEYWORDS) {
+        // 申请字典，用于 kwargs
         kwdict = PyDict_New();
         if (kwdict == NULL)
             goto fail;
+        // 我们说参数是有顺序的，*args和**kwargs在最后面
         i = total_args;
         if (co->co_flags & CO_VARARGS) {
             i++;
         }
+        // 如果不存在*args，
         SETLOCAL(i, kwdict);
     }
     else {
         kwdict = NULL;
     }
 
+    // argcount是实际传来的位置参数的个数
+    // co->co_argcount则是可以通过位置参数传递的参数个数
+    // 如果argcount > co->co_argcount，证明有扩展位置参数，否则没有  
     /* Copy all positional arguments into local variables */
     if (argcount > co->co_argcount) {
+        // 那么这里的n等于co->co_argcount
         n = co->co_argcount;
     }
     else {
+        // 没有扩展位置参数, 那么调用者通过位置参数的方式传了几个、n就是几
         n = argcount;
     }
+    // 然后我们仔细看一下这个 n，假设有一个函数 def bar(a, b, c=1, d=2, *args)
+    // 如果argcount > co->co_argcount，说明传递的位置参数的个数超过了4，于是n为4
+    // 但是如果我们只传递了两个，比如bar('a', 'b')，那么n显然为2
+    // 下面就是将已经传递的参数的值依次设置到f_localsplus里面去
     for (j = 0; j < n; j++) {
         x = args[j];
         Py_INCREF(x);
         SETLOCAL(j, x);
     }
 
+    // 如果有 *args
     /* Pack other positional arguments into the *args argument */
     if (co->co_flags & CO_VARARGS) {
         u = _PyTuple_FromArray(args + n, argcount - n);
         if (u == NULL) {
             goto fail;
         }
+        // 设置在 total_args 的位置，也就是 **kwargs 的前面
         SETLOCAL(total_args, u);
     }
 
+    // 遍历关键字参数
     /* Handle keyword arguments passed as two strided arrays */
     kwcount *= kwstep;
     for (i = 0; i < kwcount; i += kwstep) {
+        // 符号表
         PyObject **co_varnames;
+        // 获取参数名
         PyObject *keyword = kwnames[i];
+        // 获取参数值
         PyObject *value = kwargs[i];
         Py_ssize_t j;
 
+        // 函数参数必须是<字符串>
+        // 比如在字典中你可以这么做: {**{1: "a", 2: "b"}}
+        // 但你不可以这么做: dict(**{1: "a", 2: "b"})
         if (keyword == NULL || !PyUnicode_Check(keyword)) {
             _PyErr_Format(tstate, PyExc_TypeError,
                           "%U() keywords must be strings",
@@ -4134,13 +4169,21 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         /* Speed hack: do raw pointer compares. As names are
            normally interned this should almost always hit. */
         co_varnames = ((PyTupleObject *)(co->co_varnames))->ob_item;
+        // 遍历符号表，看看符号表中是否存在和关键字参数相同的符号
+        // 注意: 这里的j不是从0开始的, 而是从posonlyargcount开始
+        // 因为在Python3.8中引入了/, 在/前面的参数只能通过位置参数传递
         for (j = co->co_posonlyargcount; j < total_args; j++) {
+            // 比如传递了 b=3，那么要保证符号表中存在 "b" 这个符号
+            // 如果有，那么该参数就是通过关键字参数传递的
+            // 如果符号表里面没有这个符号，则看是否存在 **kwargs
+            // 要是没有 **kwargs，报错：got an unexpected keyword argument
             PyObject *name = co_varnames[j];
             if (name == keyword) {
                 goto kw_found;
             }
         }
 
+        /* 逻辑和上面一样 */
         /* Slow fallback, just in case */
         for (j = co->co_posonlyargcount; j < total_args; j++) {
             PyObject *name = co_varnames[j];
@@ -4156,6 +4199,8 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         assert(j >= total_args);
         if (kwdict == NULL) {
 
+            // 如果符号表中没有出现指定的符号
+            // 那么表示出现了一个不需要的关键字参数(**kwargs后续说)
             if (co->co_posonlyargcount
                 && positional_only_passed_as_keyword(tstate, co,
                                                      kwcount, kwnames))
@@ -4175,6 +4220,8 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         continue;
 
       kw_found:
+        // 索引 j 就是该参数在 f_localsplus 中的索引
+        // 但如果 GETLOCAL(j) != NULL，说明已经通过位置参数指定了
         if (GETLOCAL(j) != NULL) {
             _PyErr_Format(tstate, PyExc_TypeError,
                           "%U() got multiple values for argument '%S'",
@@ -4185,33 +4232,91 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         SETLOCAL(j, value);
     }
 
+    // 条件判断：
+    // argcount > co->co_argcount说明我们多传递了
+    // co->co_flags & CO_VARARGS为False，说明没有 *args
     /* Check the number of positional arguments */
     if ((argcount > co->co_argcount) && !(co->co_flags & CO_VARARGS)) {
         too_many_positional(tstate, co, argcount, defcount, fastlocals);
         goto fail;
     }
 
+    // 如果传入的参数个数比函数定义的参数的个数少，那么证明有默认值
+    // defcount表示设置了默认值的参数个数
     /* Add missing positional arguments (copy default values from defs) */
     if (argcount < co->co_argcount) {
+        // 显然 m = 参数总个数(不包括*args和**kwargs) - 默认参数的个数
         Py_ssize_t m = co->co_argcount - defcount;
         Py_ssize_t missing = 0;
+        // 因此 m 就是需要传递的没有默认值的参数的个数
         for (i = argcount; i < m; i++) {
+            // i = argcount是我们调用函数时传递的位置参数的总个数
+            // 很明显如果参数足够，那么 i < m 是不会满足的
+            // 比如一个函数接收6个参数，但是有两个是默认参数
+            // 这就意味着调用者通过位置参数的方式传递的话，需要至少传递4个，那么m就是4
             if (GETLOCAL(i) == NULL) {
+                // 但如果传递的参数不足四个，那么GETLOCAL从f_localsplus中就获取不到值
+                // 而一旦找不到，missing++，缺少的参数个数加一
                 missing++;
             }
         }
+        // missing不为0，表示缺少参数
         if (missing) {
+            // 直接抛出异常
+            // {func} missing {n} required positional arguments:
             missing_arguments(tstate, co, missing, defcount, fastlocals);
             goto fail;
         }
+        // 下面可能难理解，我们说这个m，是需要由调用者传递的参数个数
+        // 而n是以位置参数的形式传递过来的参数的个数
+        // 如果比函数参数个数少，那么n就是传来的参数个数
+        // 如果比函数参数的个数大，那么n则是函数参数的个数。比如：
+        /*
+        def bar(a, b, c, d=1, e=2, f=3):
+            pass
+        这是一个有6个参数的函数，显然m是3
+        实际上函数定义好了，m就是一个不变的值了，就是没有默认值的参数总个数
+        但我们调用时可以是bar(1,2,3)，也就是只传递3个，那么这里的n就是3，
+        也可以是 bar(1, 2, 3, 4, 5)，那么显然n=5，而m依旧是3
+        */      
         if (n > m)
+            // 因此现在这里的逻辑就很好理解了，假设调用的是 bar(1, 2, 3, 4, 5)
+            // 由于有3个是默认参数，那么调用时只传递 6-3=3 个就可以了，但是这里传递了5个
+            // 说明我们不想使用默认值，想重新传递，而使用默认值的只有最后一个参数
+            // 因此这个 i 就是明明可以使用默认值、但却没有使用的参数的个数 
             i = n - m;
         else
+            // 如果按照位置参数传递能走到这一步，说明已经不存在少传的情况了
+            // 因此这个n至少是 >=m 的，如果n == m的话，那么i就是0
             i = 0;
         for (; i < defcount; i++) {
+            // 默认参数的值一开始就已经被压入栈中，
+            // 整体作为一个PyTupleObject对象，被设置到了func_defaults这个域中
+            // 但是对于函数的参数来讲，肯定还要设置到f_localsplus里面去
+            // 并且要在后面，因为默认参数的顺序在非默认参数之后
             if (GETLOCAL(m+i) == NULL) {
+                // 这里是把索引为i对应的值从func_defaults里面取出来
+                // 这个i要么是n-m，要么是0
+                // 还按照之前的例子，函数接收6个参数，但是我们传了5个
+                // 因此我们只需要将最后一个、也就是索引为2的元素拷贝到f_localsplus里面
+                // 而n=5，m=3，显然i = 2。那么如果我们传递了3个呢？
+                // 显然i是0，因为此时n==m嘛，那么就意味着默认参数都使用默认值
+                // 既然这样，那就从头开始开始拷
+                // 同理传了4个参数，证明第一个参数的默认值是不需要的
+                // 那么就只需要再把后面两个拷过去就可以了
+                // 显然要从索引为1的位置拷到结束，而此时 n-m、也就是i，正好为1
+                // 所以，n-m就是"默认值组成的元组中需要拷贝到f_localsplus的第一个值的索引"
+                // 然后i < defcount; i++，一直拷到结尾
                 PyObject *def = defs[i];
                 Py_INCREF(def);
+                // 将值设置到f_localsplus里面，这里显然索引是 m+i
+                // 比如：def bar(a,b,c,d=1,e=2,f=3)
+                // bar(1, 2, 3, 4)，显然d不会使用默认值，那么只需要把后两个默认值拷给e和f即可
+                // 显然e和f根据顺序在f_localsplus中对应索引为4、5
+                // m是3，i是n-m等于4-3等于1，所以m+i正好是4，
+                // f_localsplus: [1, 2, 3, 4]
+                // PyTupleObject:(1, 2, 3)
+                // 因此PyTupleObject中索引为i的元素，拷贝到f_localsplus中正好是对应m+i的位置               
                 SETLOCAL(m+i, def);
             }
         }

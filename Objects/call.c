@@ -318,9 +318,13 @@ PyObject *
 _PyFunction_FastCallDict(PyObject *func, PyObject *const *args, Py_ssize_t nargs,
                          PyObject *kwargs)
 {
+    // 获取PyFunctionObject的PyCodeObject对象
     PyCodeObject *co = (PyCodeObject *)PyFunction_GET_CODE(func);
+    // 获取PyFunctionObject的global命名空间
     PyObject *globals = PyFunction_GET_GLOBALS(func);
+    // 获取PyFunctionObject的默认值
     PyObject *argdefs = PyFunction_GET_DEFAULTS(func);
+    // 一些额外的属性
     PyObject *kwdefs, *closure, *name, *qualname;
     PyObject *kwtuple, **k;
     PyObject **d;
@@ -332,14 +336,31 @@ _PyFunction_FastCallDict(PyObject *func, PyObject *const *args, Py_ssize_t nargs
     assert(nargs == 0 || args != NULL);
     assert(kwargs == NULL || PyDict_Check(kwargs));
 
+    // 这里判断能否进入快速通道，一个函数如果想进图快速通道要满足两个条件
+    // 1. 函数定义的时候不可以出现 *，也就是co_kwonlyargcount必须为 0
+    // 2. 函数调用时，必须都通过位置参数指定
     if (co->co_kwonlyargcount == 0 &&
         (kwargs == NULL || PyDict_GET_SIZE(kwargs) == 0) &&
         (co->co_flags & ~PyCF_MASK) == (CO_OPTIMIZED | CO_NEWLOCALS | CO_NOFREE))
     {
+        // 上面的 if 虽然满足了，但是还不够，还要继续检测
+        // argdefs == NULL，表示函数不可以有默认值
+        // 至于 nargs 是在call_function中传递的，它等于 oparg - nkwargs
+        // 也就是"传递的参数个数" 减去 "通过关键字参数传递的参数个数"
+        // 换句话说就是通过位置参数传递的参数个数
+        // 但逻辑如果能执行到这里，说明 nkwargs 一定为 0
+        // 因此这里的 nargs 就是传递的参数个数，也就是实参的个数
+        // 而co_argcount是函数参数的个数，也就是形参的个数
+        // 这里要求两者必须相等，当然了，在没有默认值、没有关键字参数的前提下
+        // 如果想正确调用函数，形参和实参的个数一定是相等的
         /* Fast paths */
         if (argdefs == NULL && co->co_argcount == nargs) {
             return function_code_fastcall(co, args, nargs, globals);
         }
+        // 但是上面的条件确实有点苛刻了，毕竟参数哪能没有默认值呢？
+        // 所以Python还提供了另外一种进入快速通道的方式
+        // 我们发现在有默认的前提现，如果能满足 nargs==0 、也就是不传参
+        // 并且函数的参数都使用默认值，这样也能进入快速通道
         else if (nargs == 0 && argdefs != NULL
                  && co->co_argcount == PyTuple_GET_SIZE(argdefs)) {
             /* function called with no arguments, but all parameters have
@@ -348,12 +369,22 @@ _PyFunction_FastCallDict(PyObject *func, PyObject *const *args, Py_ssize_t nargs
             return function_code_fastcall(co, args, PyTuple_GET_SIZE(argdefs),
                                           globals);
         }
+        // 总结，进入快速通道的两种办法：
+        // 1. 定义函数时不可以出现默认值，然后全部通过位置参数传递
+        // 2. 如果出现默认值，那么所有的参数必须都有默认值，调用时不能传参，参数都用默认值
     }
 
+    // 如果以上条件无法满足，就只能走常规方法了
+    // kwargs表示容纳关键字参数的字典，这里获取内部的元素个数
+    // 也就是我们制定了多少个关键字参数
     nk = (kwargs != NULL) ? PyDict_GET_SIZE(kwargs) : 0;
     if (nk != 0) {
+        // 将 kwargs 转换成元组
+        // 比如：func(x=1, y=2, z=3)，那么kwargs就是 {"x": 1, "y": 2, "z": 3}
+        // 那么转换后的元组就是 ("x", 1, "y", 2, "z", 3)
         Py_ssize_t pos, i;
 
+        // 申请元组，容量为 nk * 2，因为要同时存储键和值
         /* bpo-29318, bpo-27840: Caller and callee functions must not share
            the dictionary: kwargs must be copied. */
         kwtuple = PyTuple_New(2 * nk);
@@ -361,8 +392,10 @@ _PyFunction_FastCallDict(PyObject *func, PyObject *const *args, Py_ssize_t nargs
             return NULL;
         }
 
+        // 获取内部的 ob_item，也就是底层数组
         k = _PyTuple_ITEMS(kwtuple);
         pos = i = 0;
+        // 将 键值对 设置进去
         while (PyDict_Next(kwargs, &pos, &k[i], &k[i+1])) {
             /* We must hold strong references because keyword arguments can be
                indirectly modified while the function is called:
@@ -373,16 +406,20 @@ _PyFunction_FastCallDict(PyObject *func, PyObject *const *args, Py_ssize_t nargs
         }
         assert(i / 2 == nk);
     }
+    // 如果没有传递关键字参数，那么 kwtuple 和 k 就设置为NULL
     else {
         kwtuple = NULL;
         k = NULL;
     }
 
+    // 获取函数的参数以及默认值，并且这里的参数必须通过关键字参数进行传递
     kwdefs = PyFunction_GET_KW_DEFAULTS(func);
+    // 获取闭包、name、qualname
     closure = PyFunction_GET_CLOSURE(func);
     name = ((PyFunctionObject *)func) -> func_name;
     qualname = ((PyFunctionObject *)func) -> func_qualname;
 
+    // 获取默认参数的值、以及个数
     if (argdefs != NULL) {
         d = _PyTuple_ITEMS(argdefs);
         nd = PyTuple_GET_SIZE(argdefs);
@@ -392,6 +429,8 @@ _PyFunction_FastCallDict(PyObject *func, PyObject *const *args, Py_ssize_t nargs
         nd = 0;
     }
 
+    // 调用_PyEval_EvalCodeWithName，传入函数的PyCodeObject对象以及参数信息
+    // 这里走的时候就是通用通道
     result = _PyEval_EvalCodeWithName((PyObject*)co, globals, (PyObject *)NULL,
                                       args, nargs,
                                       k, k != NULL ? k + 1 : NULL, nk, 2,

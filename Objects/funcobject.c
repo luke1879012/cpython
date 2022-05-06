@@ -126,10 +126,12 @@ PyFunction_GetDefaults(PyObject *op)
 int
 PyFunction_SetDefaults(PyObject *op, PyObject *defaults)
 {
+    // 【检查】op 显然是一个函数
     if (!PyFunction_Check(op)) {
         PyErr_BadInternalCall();
         return -1;
     }
+    // defaults，默认值组成的元组
     if (defaults == Py_None)
         defaults = NULL;
     else if (defaults && PyTuple_Check(defaults)) {
@@ -139,6 +141,7 @@ PyFunction_SetDefaults(PyObject *op, PyObject *defaults)
         PyErr_SetString(PyExc_SystemError, "non-tuple default args");
         return -1;
     }
+    // 将PyFunctionObject对象的func_defaults成员设置为defaults
     Py_XSETREF(((PyFunctionObject *)op)->func_defaults, defaults);
     return 0;
 }
