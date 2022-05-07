@@ -4976,6 +4976,8 @@ _PyEval_GetBuiltinId(_Py_Identifier *name)
 PyObject *
 PyEval_GetLocals(void)
 {
+    // Python locals() 底层执行这个函数
+    // 获取当前的线程状态对象，然后拿到里面的栈帧对象
     PyThreadState *tstate = _PyThreadState_GET();
     PyFrameObject *current_frame = _PyEval_GetFrame(tstate);
     if (current_frame == NULL) {
@@ -4988,6 +4990,7 @@ PyEval_GetLocals(void)
     }
 
     assert(current_frame->f_locals != NULL);
+    // 获取 local 命名空间
     return current_frame->f_locals;
 }
 
