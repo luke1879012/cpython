@@ -660,7 +660,9 @@ _PyFrame_New_NoTrack(PyThreadState *tstate, PyCodeObject *code,
     }
     else {
         Py_ssize_t extras, ncells, nfrees;
+        // 获取 cell 对象的个数
         ncells = PyTuple_GET_SIZE(code->co_cellvars);
+        // 获取 free 对象的个数
         nfrees = PyTuple_GET_SIZE(code->co_freevars);
         extras = code->co_stacksize + code->co_nlocals + ncells +
             nfrees;
@@ -690,10 +692,15 @@ _PyFrame_New_NoTrack(PyThreadState *tstate, PyCodeObject *code,
         }
 
         f->f_code = code;
+        // 局部变量 + cell 对象 + free 对象所占的内存空间
         extras = code->co_nlocals + ncells + nfrees;
+        // 剩余那一份留给运行时栈，由于栈帧还未创建完毕，显然目前是空的
+        // f->f_localsplus + extras 指向运行时栈的栈底（目前也是栈顶）
         f->f_valuestack = f->f_localsplus + extras;
+        // 内存初始化，由于都是 PyObject *, 所以初始化为NULL
         for (i=0; i<extras; i++)
             f->f_localsplus[i] = NULL;
+        // local 名字空间也是NULL
         f->f_locals = NULL;
         f->f_trace = NULL;
     }

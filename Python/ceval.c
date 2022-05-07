@@ -2639,7 +2639,9 @@ main_loop:
         }
 
         case TARGET(LOAD_DEREF): {
+            // 获取PyCellObject对象
             PyObject *cell = freevars[oparg];
+            // 获取PyCellObject对象的ob_ref指向的对象
             PyObject *value = PyCell_GET(cell);
             if (value == NULL) {
                 format_exc_unbound(tstate, co, oparg);
@@ -2651,9 +2653,13 @@ main_loop:
         }
 
         case TARGET(STORE_DEREF): {
+            // 弹出变量名
             PyObject *v = POP();
+            // 获取cell变量
             PyObject *cell = freevars[oparg];
+            // 获取老的cell对象
             PyObject *oldobj = PyCell_GET(cell);
+            // 我们看到了一个PyCell_SET，那么玄机肯定在这里面了
             PyCell_SET(cell, v);
             Py_XDECREF(oldobj);
             DISPATCH();
@@ -3576,6 +3582,8 @@ main_loop:
             PyObject *qualname = POP();
             // 弹出栈顶元素，得到PyCodeObject
             PyObject *codeobj = POP();
+            // 以PyCodeObject对象、global命名空间、函数名字为参数
+            // 构造出PyFunctionObject
             PyFunctionObject *func = (PyFunctionObject *)
                 PyFunction_NewWithQualName(codeobj, f->f_globals, qualname);
 
@@ -3586,22 +3594,29 @@ main_loop:
             }
 
             if (oparg & 0x08) {
+                // 参数为8时调用
                 assert(PyTuple_CheckExact(TOP()));
+                // 弹出闭包需要使用的变量信息，也就是元组
+                // 并写入到func_closure中
                 func ->func_closure = POP();
             }
+            // 这是处理注解的，只有python3.6+中存在
             if (oparg & 0x04) {
                 assert(PyDict_CheckExact(TOP()));
                 func->func_annotations = POP();
             }
+            // 处理关键字参数
             if (oparg & 0x02) {
                 assert(PyDict_CheckExact(TOP()));
                 func->func_kwdefaults = POP();
             }
+            // 处理默认参数
             if (oparg & 0x01) {
                 assert(PyTuple_CheckExact(TOP()));
                 func->func_defaults = POP();
             }
 
+            // 压入运行时栈
             PUSH((PyObject *)func);
             DISPATCH();
         }
@@ -4420,11 +4435,14 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
     /* Allocate and initialize storage for cell vars, and copy free
        vars into frame. */
     for (i = 0; i < PyTuple_GET_SIZE(co->co_cellvars); ++i) {
+        // 声明一个指针，指向Cell对象
         PyObject *c;
         Py_ssize_t arg;
+        /* 处理被嵌套函数共享的外层函数的局部变量 */
         /* Possibly account for the cell variable being an argument. */
         if (co->co_cell2arg != NULL &&
             (arg = co->co_cell2arg[i]) != CO_CELL_NOT_AN_ARG) {
+            // 创建Cell对象
             c = PyCell_New(GETLOCAL(arg));
             /* Clear the local copy. */
             SETLOCAL(arg, NULL);
@@ -4434,6 +4452,7 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         }
         if (c == NULL)
             goto fail;
+        // 拷贝到 f_localsplus 的第二段内存中
         SETLOCAL(co->co_nlocals + i, c);
     }
 
@@ -4441,6 +4460,7 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
     for (i = 0; i < PyTuple_GET_SIZE(co->co_freevars); ++i) {
         PyObject *o = PyTuple_GET_ITEM(closure, i);
         Py_INCREF(o);
+        // 处理闭包的逻辑
         freevars[PyTuple_GET_SIZE(co->co_cellvars) + i] = o;
     }
 

@@ -8,14 +8,22 @@
 PyObject *
 PyCell_New(PyObject *obj)
 {
+    // 声明一个PyCellObject对象
     PyCellObject *op;
 
+    // 为这个PyCellObject申请空间，类型是PyCell_Type
     op = (PyCellObject *)PyObject_GC_New(PyCellObject, &PyCell_Type);
     if (op == NULL)
         return NULL;
+    // 这里的obj是什么呢？
+    // 显然是_PyEval_EvalCodeWithName里面的GETLOCAL(arg)或者NULL
+    // 说白了，就是我们之前说的哪些被内层函数引用的外层函数的局部变量
+    // 如果没人引用的话就是NULL
     op->ob_ref = obj;
     Py_XINCREF(obj);
 
+    // 闭包也是可变对象，可能发生循环引用
+    // 因此要被 GC 跟踪
     _PyObject_GC_TRACK(op);
     return (PyObject *)op;
 }
