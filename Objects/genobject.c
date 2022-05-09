@@ -152,8 +152,11 @@ gen_dealloc(PyGenObject *gen)
 static PyObject *
 gen_send_ex(PyGenObject *gen, PyObject *arg, int exc, int closing)
 {
+    // 获取线程状态对象
     PyThreadState *tstate = _PyThreadState_GET();
+    // 拿到生成器内部保存的栈帧对象
     PyFrameObject *f = gen->gi_frame;
+    // 返回值
     PyObject *result;
 
     if (gen->gi_running) {
@@ -189,8 +192,12 @@ gen_send_ex(PyGenObject *gen, PyObject *arg, int exc, int closing)
         return NULL;
     }
 
+    // 如果 f_lasti 为 -1, 说明生成器尚未执行
     if (f->f_lasti == -1) {
+        // arg 就是驱动生成器执行时传递的值
+        // 如果它不为 None, 报错
         if (arg && arg != Py_None) {
+            // 报错信息和我们在 Python 里面看到的是一样的
             const char *msg = "can't send non-None value to a "
                               "just-started generator";
             if (PyCoro_CheckExact(gen)) {
@@ -200,6 +207,7 @@ gen_send_ex(PyGenObject *gen, PyObject *arg, int exc, int closing)
                 msg = "can't send non-None value to a "
                       "just-started async generator";
             }
+            // 设置异常，类型为 TypeError，信息为msg
             PyErr_SetString(PyExc_TypeError, msg);
             return NULL;
         }
@@ -214,11 +222,20 @@ gen_send_ex(PyGenObject *gen, PyObject *arg, int exc, int closing)
      * necessarily their creator. */
     Py_XINCREF(tstate->frame);
     assert(f->f_back == NULL);
+    // 重点来了，f->f_back 表示生成器内部的栈帧的上一级栈帧
+    // 而tstate->frame 表示当前栈帧，也就是调用__next__或者send时所在的栈帧
+    // 那么下面这行代码执行完之后，生成器内部的栈帧就变成了当前栈帧
+    // 而tstate->frame则变成生成器内部栈帧的上一级栈帧
+    // [frame] 所以这不就是将生成器内部的栈帧插入到栈帧链当中了呢？ goto [result]
     f->f_back = tstate->frame;
 
     gen->gi_running = 1;
     gen->gi_exc_state.previous_item = tstate->exc_info;
     tstate->exc_info = &gen->gi_exc_state;
+    // [result] 插入到栈帧链后要干啥呢？显然是执行栈帧内的字节码 goto [frame]
+    // 栈帧对象保存着生成器的执行上下文
+    // f_lasti 字段则跟踪生成器内部代码的执行进度
+    // 当遇到 yield 之后，将后面的值返回给 result
     result = PyEval_EvalFrameEx(f, exc);
     tstate->exc_info = gen->gi_exc_state.previous_item;
     gen->gi_exc_state.previous_item = NULL;
@@ -749,6 +766,7 @@ PyTypeObject PyGen_Type = {
     0,                                          /* tp_richcompare */
     offsetof(PyGenObject, gi_weakreflist),      /* tp_weaklistoffset */
     PyObject_SelfIter,                          /* tp_iter */
+    // __next__ 在底层对应类型对象是 tp_iternext 
     (iternextfunc)gen_iternext,                 /* tp_iternext */
     gen_methods,                                /* tp_methods */
     gen_memberlist,                             /* tp_members */
@@ -778,31 +796,49 @@ static PyObject *
 gen_new_with_qualname(PyTypeObject *type, PyFrameObject *f,
                       PyObject *name, PyObject *qualname)
 {
+    // 为生成器对象申请内存
+    // 这里是PyObject_GC_New，因为生成器对象要参与 GC
+    // 所以还要为PyGC_Head 申请内存
     PyGenObject *gen = PyObject_GC_New(PyGenObject, type);
+    // NULL就是申请失败
     if (gen == NULL) {
         Py_DECREF(f);
         return NULL;
     }
+    // 将通用通道里面的栈帧交给 gi_frame 保存
+    // 所以普通函数和生成器函数调用时都会创建栈帧
+    // 但普通函数调用时，会在栈帧里面将字节码全部执行完毕
+    // 而生成器函数调用时，会返回生成器对象，并将栈帧保存在里面
     gen->gi_frame = f;
+    // 注意这里，又让栈帧的 f_gen 成员保存生成器对象
+    // 如果是普通函数，那么 f_gen 显然为空
     f->f_gen = (PyObject *) gen;
     Py_INCREF(f->f_code);
+    // 让生成器的 gi_code 也保存 PyCodeObject
     gen->gi_code = (PyObject *)(f->f_code);
+    // 初始时，gi_running 为0
     gen->gi_running = 0;
+    // 弱引用为空
     gen->gi_weakreflist = NULL;
+    // gi_exc_state和异常栈相关
+    // 内部成员初始为NULL
     gen->gi_exc_state.exc_type = NULL;
     gen->gi_exc_state.exc_value = NULL;
     gen->gi_exc_state.exc_traceback = NULL;
     gen->gi_exc_state.previous_item = NULL;
+    // 设置 gi_name
     if (name != NULL)
         gen->gi_name = name;
     else
         gen->gi_name = ((PyCodeObject *)gen->gi_code)->co_name;
     Py_INCREF(gen->gi_name);
+    // 设置 gi_qualname
     if (qualname != NULL)
         gen->gi_qualname = qualname;
     else
         gen->gi_qualname = gen->gi_name;
     Py_INCREF(gen->gi_qualname);
+    // 让生成器对象被 GC 跟踪
     _PyObject_GC_TRACK(gen);
     return (PyObject *)gen;
 }
@@ -963,6 +999,7 @@ PyDoc_STRVAR(coro_close_doc,
 "close() -> raise GeneratorExit inside coroutine.");
 
 static PyMethodDef coro_methods[] = {
+    // 生成器 send 方法对应这里
     {"send",(PyCFunction)_PyGen_Send, METH_O, coro_send_doc},
     {"throw",(PyCFunction)gen_throw, METH_VARARGS, coro_throw_doc},
     {"close",(PyCFunction)gen_close, METH_NOARGS, coro_close_doc},

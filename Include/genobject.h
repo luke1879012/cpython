@@ -15,20 +15,33 @@ struct _frame; /* Avoid including frameobject.h */
 /* _PyGenObject_HEAD defines the initial segment of generator
    and coroutine objects. */
 #define _PyGenObject_HEAD(prefix)                                           \
+    /* 头部信息 */                                                          \
     PyObject_HEAD                                                           \
+    /* 生成器执行时对应的栈帧对象 */                                         \
+    /* 用于保存执行上下文信息 */                                             \
     /* Note: gi_frame can be NULL if the generator is "finished" */         \
     struct _frame *prefix##_frame;                                          \
+    /* 表示生成器是否在运行当中 */                                           \
     /* True if generator is being executed. */                              \
     char prefix##_running;                                                  \
+    /* 生成器函数的 PyCodeObject 对象 */                                     \
     /* The code object backing the generator */                             \
     PyObject *prefix##_code;                                                \
+    /* 弱引用相关，不深入讨论 */                                             \
     /* List of weak reference. */                                           \
     PyObject *prefix##_weakreflist;                                         \
+    /* 生成器的名字 */                                                      \
     /* Name of the generator. */                                            \
     PyObject *prefix##_name;                                                \
+    /* 生成器的全限定名 */                                                   \
     /* Qualified name of the generator. */                                  \
     PyObject *prefix##_qualname;                                            \
+    /* 生成器执行出现异常时的异常栈 */                                       \
+    /* 更准确的说，其实是异常栈的一个entry */                                \
+    /* 里面包含了 exc_type、exc_value、exc_traceback */                      \
+    /* 以及通过 previous_item 指针指向上一个entry */                         \
     _PyErr_StackItem prefix##_exc_state;
+// 所以生成器在底层对应 PyGenObject，它的类型是 PyGen_Type
 
 typedef struct {
     /* The gi_ prefix is intended to remind of generator-iterator. */

@@ -2083,8 +2083,12 @@ main_loop:
         }
 
         case TARGET(YIELD_VALUE): {
+            // 执行 yield value 时
+            // 会先将 value 压入运行时栈
+            // 然后这里再将 value 从栈里面弹出
             retval = POP();
 
+            // 异步生成器逻辑，当前暂不关注
             if (co->co_flags & CO_ASYNC_GENERATOR) {
                 PyObject *w = _PyAsyncGenValueWrapperNew(retval);
                 Py_DECREF(retval);
@@ -2095,7 +2099,10 @@ main_loop:
                 retval = w;
             }
 
+            // stack_pointer 指向运行时栈的栈顶
+            // 所以要赋值给f->f_stacktop，因为要跳出循环了
             f->f_stacktop = stack_pointer;
+            // 直接通过goto语句来跳出for循环
             goto exit_yielding;
         }
 
@@ -4464,6 +4471,8 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         freevars[PyTuple_GET_SIZE(co->co_cellvars) + i] = o;
     }
 
+    // 根据 co_flags 检测函数的种类
+    // 如果是生成器函数、写成函数、异步生成器函数 三者之一
     /* Handle generator/coroutine/asynchronous generator */
     if (co->co_flags & (CO_GENERATOR | CO_COROUTINE | CO_ASYNC_GENERATOR)) {
         PyObject *gen;
@@ -4476,16 +4485,20 @@ _PyEval_EvalCodeWithName(PyObject *_co, PyObject *globals, PyObject *locals,
         /* Create a new generator that owns the ready to run frame
          * and return that as the value. */
         if (is_coro) {
+            // 如果是协程函数，创建协程
             gen = PyCoro_New(f, name, qualname);
         } else if (co->co_flags & CO_ASYNC_GENERATOR) {
+            // 如果是异步生成器函数，创建异步生成器
             gen = PyAsyncGen_New(f, name, qualname);
         } else {
+            // 否则说明是生成器函数，那么创建生成器
             gen = PyGen_NewWithQualName(f, name, qualname);
         }
         if (gen == NULL) {
             return NULL;
         }
 
+        // 被 GC 跟踪
         _PyObject_GC_TRACK(f);
 
         return gen;
