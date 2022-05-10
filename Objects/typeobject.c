@@ -5235,7 +5235,11 @@ static int add_operators(PyTypeObject *);
 int
 PyType_Ready(PyTypeObject *type)
 {
+    // 这里的参数显然是类型对象
+    // dict: 属性字典
+    // bases: 继承的所有基类, 即 __bases__
     PyObject *dict, *bases;
+    // base: 继承的第一个基类, 即 __base__
     PyTypeObject *base;
     Py_ssize_t i, n;
 
@@ -5277,23 +5281,36 @@ PyType_Ready(PyTypeObject *type)
         goto error;
     }
 
+    // 获取类型对象中 tp_base 成员指定的基类
     /* Initialize tp_base (defaults to BaseObject unless that's us) */
     base = type->tp_base;
+    // 如果基类为空、并且该类本身不是object
     if (base == NULL && type != &PyBaseObject_Type) {
+        // 将该类的基类设置为 object、即 &PyBaseOjbect_Type
+        // 所以一些类型对象在底层定义的时候，tp_base 成员为空
+        // 因为tp_base是在这里、也就是初始化的时候进行设置的
         base = type->tp_base = &PyBaseObject_Type;
         Py_INCREF(base);
     }
 
+    // 如果基类不是NULL，也就是指定了基类
+    // 但是基类的属性字典是NULL
     /* Now the only way base can still be NULL is if type is
      * &PyBaseObject_Type.
      */
 
     /* Initialize the base class */
     if (base != NULL && base->tp_dict == NULL) {
+        // 说明该类的基类尚未初始化，那么会先对基类进行初始化
+        // 注意这里的 tp_dict，它表示每个类都会有属性字典
+        // 而属性字典是否为NULL，是类型对象是否初始化完成的重要标志
         if (PyType_Ready(base) < 0)
             goto error;
     }
 
+    // 如果该类型对象 ob_type 为空，但是基类不为空
+    // 那么将该类型对象的 ob_type 设置为基类的 ob_type
+    // 为什么要做这一步，我们后面会详细说
     /* Initialize ob_type if NULL.      This means extensions that want to be
        compilable separately on Windows can call PyType_Ready() instead of
        initializing the ob_type field of their type objects. */
@@ -5304,18 +5321,25 @@ PyType_Ready(PyTypeObject *type)
     if (Py_TYPE(type) == NULL && base != NULL)
         Py_TYPE(type) = Py_TYPE(base);
 
+    // 获取 __bases__，检测是否为空
     /* Initialize tp_bases */
     bases = type->tp_bases;
+    // 如果为空，则根据 __base__ 进行设置
     if (bases == NULL) {
+        // 如果 base 也为空，那么 bases 就是空元组
+        // 而base如果为空了，说明当前的类对象一定是object
         if (base == NULL)
             bases = PyTuple_New(0);
+        // 如果 base 不为空，那么 bases 就是(base,)
         else
             bases = PyTuple_Pack(1, base);
         if (bases == NULL)
             goto error;
+        // 设置 tp_bases
         type->tp_bases = bases;
     }
 
+    // 设置属性字典，后续再聊
     /* Initialize tp_dict */
     dict = type->tp_dict;
     if (dict == NULL) {
