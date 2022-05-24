@@ -850,7 +850,9 @@ descr_new(PyTypeObject *descrtype, PyTypeObject *type, const char *name)
 {
     PyDescrObject *descr;
 
+    // 为 PyDescrObject 申请内存
     descr = (PyDescrObject *)PyType_GenericAlloc(descrtype, 0);
+    // 设置成员属性
     if (descr != NULL) {
         Py_XINCREF(type);
         descr->d_type = type;
@@ -947,10 +949,13 @@ PyDescr_NewGetSet(PyTypeObject *type, PyGetSetDef *getset)
 PyObject *
 PyDescr_NewWrapper(PyTypeObject *type, struct wrapperbase *base, void *wrapped)
 {
+    // 声明 wrapper descriptor
     PyWrapperDescrObject *descr;
 
+    // 调用descr_new申请内存
     descr = (PyWrapperDescrObject *)descr_new(&PyWrapperDescr_Type,
                                              type, base->name);
+    // 设置成员属性
     if (descr != NULL) {
         descr->d_base = base;
         descr->d_wrapped = wrapped;

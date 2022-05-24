@@ -5339,7 +5339,7 @@ PyType_Ready(PyTypeObject *type)
         type->tp_bases = bases;
     }
 
-    // 设置属性字典，后续再聊
+    // 设置属性字典
     /* Initialize tp_dict */
     dict = type->tp_dict;
     if (dict == NULL) {
@@ -5349,6 +5349,9 @@ PyType_Ready(PyTypeObject *type)
         type->tp_dict = dict;
     }
 
+    // 将与type相关的操作加入到tp_dict中
+    // 注意：这里的type是PyType_Ready的参数中的type
+    // 它可以是Python的<class 'type'>、也可以是<class 'int'>
     /* Add type-specific descriptors to tp_dict */
     if (add_operators(type) < 0)
         goto error;
@@ -7050,6 +7053,8 @@ static slotdef slotdefs[] = {
     AMSLOT("__anext__", am_anext, slot_am_anext, wrap_unaryfunc,
            "__anext__($self, /)\n--\n\nReturn a value or raise StopAsyncIteration."),
 
+    // 比如 __add__、__radd__ 都对应 nb_add
+    // 这个 nb_add 在PyLong_Type 就是 long_add，表示 +
     BINSLOT("__add__", nb_add, slot_nb_add,
            "+"),
     RBINSLOT("__radd__", nb_add, slot_nb_add,
@@ -7135,6 +7140,8 @@ static slotdef slotdefs[] = {
            wrap_binaryfunc, "@="),
     MPSLOT("__len__", mp_length, slot_mp_length, wrap_lenfunc,
            "__len__($self, /)\n--\n\nReturn len(self)."),
+    // 相同操作名也可以对应不同操作
+    // 比如 __getitem__ 对应 mp_subscript、sq_item
     MPSLOT("__getitem__", mp_subscript, slot_mp_subscript,
            wrap_binaryfunc,
            "__getitem__($self, key, /)\n--\n\nReturn self[key]."),
@@ -7158,6 +7165,8 @@ static slotdef slotdefs[] = {
            "__mul__($self, value, /)\n--\n\nReturn self*value."),
     SQSLOT("__rmul__", sq_repeat, NULL, wrap_indexargfunc,
            "__rmul__($self, value, /)\n--\n\nReturn value*self."),
+    // 相同操作名也可以对应不同操作
+    // 比如 __getitem__ 对应 mp_subscript、sq_item
     SQSLOT("__getitem__", sq_item, slot_sq_item, wrap_sq_item,
            "__getitem__($self, key, /)\n--\n\nReturn self[key]."),
     SQSLOT("__setitem__", sq_ass_item, slot_sq_ass_item, wrap_sq_setitem,
@@ -7190,6 +7199,14 @@ slotptr(PyTypeObject *type, int ioffset)
     /* Note: this depends on the order of the members of PyHeapTypeObject! */
     assert(offset >= 0);
     assert((size_t)offset < offsetof(PyHeapTypeObject, as_buffer));
+    // 从PyHeapTypeObject中排在后面的PySequenceMethods开始判断
+    // 然后向前，一次判断PyMappingMethods和PyNumberMethods
+    /* 
+       为什么要这么做？假设我们首先从PyNumberMethods开始判断
+       如果一个操作的offset大于as_numbers在PyHeapTypeObject中的偏移量
+       那么我们还是没办法确认这个操作到底属于谁
+       只有从后往前进行判断，才能解决这个问题
+    */
     if ((size_t)offset >= offsetof(PyHeapTypeObject, as_sequence)) {
         ptr = (char *)type->tp_as_sequence;
         offset -= offsetof(PyHeapTypeObject, as_sequence);
@@ -7382,15 +7399,21 @@ init_slotdefs(void)
 {
     slotdef *p;
 
+    // init_slotdefs只会进行一次
     if (slotdefs_initialized)
         return;
     for (p = slotdefs; p->name; p++) {
+        // 通过在PyHeapTypeObject中的offset对slots进行排序
+        // 而且是从小到大排
         /* Slots must be ordered by their offset in the PyHeapTypeObject. */
         assert(!p[1].name || p->offset <= p[1].offset);
         p->name_strobj = PyUnicode_InternFromString(p->name);
         if (!p->name_strobj || !PyUnicode_CHECK_INTERNED(p->name_strobj))
             Py_FatalError("Out of memory interning slotdef names");
     }
+    // 排完序之后将值赋为1
+    // 这样的话下次执行到上面的if时
+    // 由于条件为真会直接return
     slotdefs_initialized = 1;
 }
 
@@ -7612,18 +7635,25 @@ recurse_down_subclasses(PyTypeObject *type, PyObject *name,
 static int
 add_operators(PyTypeObject *type)
 {
+    // 属性字典
     PyObject *dict = type->tp_dict;
+    // slot, 在底层是一个 slotdef 结构体
     slotdef *p;
+    // wrapper desciptor
     PyObject *descr;
     void **ptr;
 
+    // 对 slotdefs 进行排序
     init_slotdefs();
     for (p = slotdefs; p->name; p++) {
+        // 如果slot中没有指定wrapper，则无需处理
         if (p->wrapper == NULL)
             continue;
+        // 获得slot对应的操作在PyTypeObject中的函数指针
         ptr = slotptr(type, p->offset);
         if (!ptr || !*ptr)
             continue;
+        // 如果tp_dict中已经存在操作名，则放弃
         if (PyDict_GetItemWithError(dict, p->name_strobj))
             continue;
         if (PyErr_Occurred()) {
@@ -7637,9 +7667,11 @@ add_operators(PyTypeObject *type)
                 return -1;
         }
         else {
+            // 创建 wrapper descriptor
             descr = PyDescr_NewWrapper(type, p, *ptr);
             if (descr == NULL)
                 return -1;
+            // 将 <操作名，wapper descriptor> 放入tp_dict中
             if (PyDict_SetItem(dict, p->name_strobj, descr) < 0) {
                 Py_DECREF(descr);
                 return -1;

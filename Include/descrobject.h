@@ -23,6 +23,7 @@ typedef PyObject *(*wrapperfunc)(PyObject *self, PyObject *args,
 typedef PyObject *(*wrapperfunc_kwds)(PyObject *self, PyObject *args,
                                       void *wrapped, PyObject *kwds);
 
+//从定义上看, 我们发现slot不是一个PyObject
 struct wrapperbase {
     const char *name;
     int offset;
@@ -67,8 +68,11 @@ typedef struct {
 } PyGetSetDescrObject;
 
 typedef struct {
+    // 该成员相当于 PyDescrObject d_common
     PyDescr_COMMON;
+    // slot
     struct wrapperbase *d_base;
+    // 函数指针
     void *d_wrapped; /* This can be any function pointer */
 } PyWrapperDescrObject;
 #endif /* Py_LIMITED_API */
