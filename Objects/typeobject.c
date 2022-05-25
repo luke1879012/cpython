@@ -5234,6 +5234,12 @@ static int add_operators(PyTypeObject *);
 
 int
 PyType_Ready(PyTypeObject *type)
+// 大概步骤如下: 
+// 1. 设置类型信息，基类及基类列表；
+// 2. 填充属性字典；
+// 3. 确定 MRO 顺序列表；
+// 4. 基于 MRO 顺序列表从基类继承操作；
+// 5. 设置基类的子类列表，或者说，将自身加入到基类的 tp_subclasses 中；
 {
     // 这里的参数显然是类型对象
     // dict: 属性字典
@@ -5376,14 +5382,19 @@ PyType_Ready(PyTypeObject *type)
     if (type->tp_base != NULL)
         inherit_special(type, type->tp_base);
 
+    // 获取 MRO 顺序列表
     /* Initialize tp_dict properly */
     bases = type->tp_mro;
     assert(bases != NULL);
     assert(PyTuple_Check(bases));
     n = PyTuple_GET_SIZE(bases);
+    // 遍历所有的基类，包括直接基类、间接基类
+    // 由于 MRO 的第一个类是其本身，所以遍历是第二项开始的
     for (i = 1; i < n; i++) {
         PyObject *b = PyTuple_GET_ITEM(bases, i);
         if (PyType_Check(b))
+            // 继承基类操作
+            // 直接拷贝
             inherit_slots(type, (PyTypeObject *)b);
     }
 
@@ -5472,8 +5483,11 @@ PyType_Ready(PyTypeObject *type)
     }
 
     /* Link into each base class's list of subclasses */
+    // 拿到所有的基类
     bases = type->tp_bases;
     n = PyTuple_GET_SIZE(bases);
+    // 挨个遍历，将自身加入到基类的 tp_subclasses 中
+    // 因为一个类可以直接继承很多基类，而每个基类都要添加
     for (i = 0; i < n; i++) {
         PyObject *b = PyTuple_GET_ITEM(bases, i);
         if (PyType_Check(b) &&
