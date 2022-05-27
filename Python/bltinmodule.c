@@ -106,33 +106,49 @@ builtin___build_class__(PyObject *self, PyObject *const *args, Py_ssize_t nargs,
     PyObject *cls = NULL, *cell = NULL;
     int isclass = 0;   /* initialize to prevent gcc warning */
 
+    // class A: 会被翻译成builtin.__build_class__(PyFunctionObject, class name)
+    // 所以至少需要两个参数
     if (nargs < 2) {
+        // 参数不足，报错
         PyErr_SetString(PyExc_TypeError,
                         "__build_class__: not enough arguments");
         return NULL;
     }
+    // 类对应的PyFunctionObject
     func = args[0];   /* Better be callable */
     if (!PyFunction_Check(func)) {
         PyErr_SetString(PyExc_TypeError,
                         "__build_class__: func must be a function");
         return NULL;
     }
+    // 类对应的名字, __build_class__的时候，类肯定有名字
     name = args[1];
     if (!PyUnicode_Check(name)) {
         PyErr_SetString(PyExc_TypeError,
                         "__build_class__: name is not a string");
         return NULL;
     }
+
+    // args[0]表示 PyFunctionObject*
+    // args[1]表示 class name
+    // args + 2 开始是继承的基类，基类的个数显然是 nargs - 2
+    // 所以这里是拿到所有的基类
     orig_bases = _PyTuple_FromArray(args + 2, nargs - 2);
     if (orig_bases == NULL)
         return NULL;
 
+    // 实现可以继承实例，调用实例的__mro_entries__，必须返回一个元组
+    // 如果一个类继承了一个拥有__mro_entries__的实例，那么该类会多出一个属性叫 __orig_bases__
+    // 注意:
+    // 1）只有继承了拥有 __mro_entries__ 方法的实例的类，才有 __orig_bases__ 属性；
+    // 2）这样的类，在 Python 里面不能手动调用 type 来创建；
     bases = update_bases(orig_bases, args + 2, nargs - 2);
     if (bases == NULL) {
         Py_DECREF(orig_bases);
         return NULL;
     }
 
+    // 获取metaclass
     if (kwnames == NULL) {
         meta = NULL;
         mkw = NULL;
@@ -162,21 +178,44 @@ builtin___build_class__(PyObject *self, PyObject *const *args, Py_ssize_t nargs,
             return NULL;
         }
     }
+    // 如果meta为NULL，这意味着用户没有指定metaclass
     if (meta == NULL) {
+        // 尝试获取基类，如果没有基类
         /* if there are no bases, use type: */
         if (PyTuple_GET_SIZE(bases) == 0) {
+            // 指定 metaclass 为type
             meta = (PyObject *) (&PyType_Type);
         }
+        // 否则获取第一个继承的基类的metaclass
         /* else get the type of the first base */
         else {
+            // 拿到第一个基类
             PyObject *base0 = PyTuple_GET_ITEM(bases, 0);
+            // 拿到第一个基类的__class__
             meta = (PyObject *) (base0->ob_type);
         }
+        // meta也是一个类
         Py_INCREF(meta);
         isclass = 1;  /* meta is really a class */
     }
 
+    // 如果设置了元类，那么isclas为1，if为真
     if (isclass) {
+        // 选择出了元类，下面这一步就要解决元类冲突
+        // 假设有两个继承type的元类 MyType1 和 MyType2
+        // 然后 Base1 的元类是 MyType1
+        //      Base2 的元类是 MyType2
+        // 那么如果class A(Base1, Base2) 的话，就会报错
+        // 因为在Python中有一个要求，假设class A(Base1, Base2, ..., BaseN)
+        // Base1的元类叫MyType1、...、BaseN的元类叫MyTypeN
+        // 那么必须满足:
+        /*
+            MyType1是MyType2的子类或者父类;
+            MyType2是MyType3的子类或者父类;
+            ... 
+            MyType1是MyTypeN的子类或者父类;
+        */
+        // 而之所以存在这一限制，原因是为了避免属性冲突
         /* meta is really a class, so check for a more derived
            metaclass, or possible metaclass conflicts: */
         winner = (PyObject *)_PyType_CalculateMetaclass((PyTypeObject *)meta,
@@ -193,15 +232,19 @@ builtin___build_class__(PyObject *self, PyObject *const *args, Py_ssize_t nargs,
             Py_INCREF(meta);
         }
     }
+    // 寻找__prepare__
     /* else: meta is not a class, so we cannot do the metaclass
        calculation, so we will use the explicitly given object as it is */
     if (_PyObject_LookupAttrId(meta, &PyId___prepare__, &prep) < 0) {
         ns = NULL;
     }
+    // 这个__prepare__必须返回一个mapping
+    // 如果返回None，那么等价于返回一个空字典
     else if (prep == NULL) {
         ns = PyDict_New();
     }
     else {
+        // 否则将字典返回
         PyObject *pargs[2] = {name, bases};
         ns = _PyObject_FastCallDict(prep, pargs, 2, mkw);
         Py_DECREF(prep);
@@ -213,6 +256,7 @@ builtin___build_class__(PyObject *self, PyObject *const *args, Py_ssize_t nargs,
         return NULL;
     }
     if (!PyMapping_Check(ns)) {
+        // 如果返回值不是一个字典，那么报错
         PyErr_Format(PyExc_TypeError,
                      "%.200s.__prepare__() must return a mapping, not %.200s",
                      isclass ? ((PyTypeObject *)meta)->tp_name : "<metaclass>",
@@ -2710,6 +2754,7 @@ PyTypeObject PyZip_Type = {
 
 
 static PyMethodDef builtin_methods[] = {
+    // __build_class__ 对应的底层函数
     {"__build_class__", (PyCFunction)(void(*)(void))builtin___build_class__,
      METH_FASTCALL | METH_KEYWORDS, build_class_doc},
     {"__import__",      (PyCFunction)(void(*)(void))builtin___import__, METH_VARARGS | METH_KEYWORDS, import_doc},

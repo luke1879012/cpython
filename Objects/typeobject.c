@@ -957,6 +957,7 @@ type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyObject *obj;
 
+    // tp_new 负责创建实例，所以它不能为空
     if (type->tp_new == NULL) {
         PyErr_Format(PyExc_TypeError,
                      "cannot create '%.100s' instances",
@@ -971,11 +972,14 @@ type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
     assert(!PyErr_Occurred());
 #endif
 
+    // 调用tp_new 为实例申请内存
     obj = type->tp_new(type, args, kwds);
     obj = _Py_CheckFunctionResult((PyObject*)type, obj, NULL);
     if (obj == NULL)
         return NULL;
 
+    // 如果调用的是&PyType_Type, 并且只接受了一个位置参数
+    // 那么显然是查看对象类型，执行完__new__之后直接返回
     /* Ugly exception: when the call was type(something),
        don't call tp_init on the result. */
     if (type == &PyType_Type &&
@@ -984,12 +988,17 @@ type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
          (PyDict_Check(kwds) && PyDict_GET_SIZE(kwds) == 0)))
         return obj;
 
+    // __new__里面一定要返回类的实例对象
+    // 否则是不会执行__init__函数的，从这里我们也看到了
+    // 如果obj的类型不是对应的类、或者其子类，那么直接返回
     /* If the returned object is not an instance of type,
        it won't be initialized. */
     if (!PyType_IsSubtype(Py_TYPE(obj), type))
         return obj;
 
+    // 然后获取obj的类型
     type = Py_TYPE(obj);
+    // 如果内部存在__init__函数，那么执行
     if (type->tp_init != NULL) {
         int res = type->tp_init(obj, args, kwds);
         if (res < 0) {
@@ -1001,6 +1010,8 @@ type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
             assert(!PyErr_Occurred());
         }
     }
+    // 执行完构造函数之后，再将对象返回
+    // 返回的 obj 可以是类对象，也可以是实例对象(取决于type_call的第一个参数)
     return obj;
 }
 
@@ -2324,6 +2335,7 @@ _PyType_CalculateMetaclass(PyTypeObject *metatype, PyObject *bases)
 static PyObject *
 type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
 {
+    // 都是类的一些动态元信息
     PyObject *name, *bases = NULL, *orig_dict, *dict = NULL;
     PyObject *qualname, *slots = NULL, *tmp, *newslots, *cell;
     PyTypeObject *type = NULL, *base, *tmptype, *winner;
@@ -2338,19 +2350,27 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     assert(args != NULL && PyTuple_Check(args));
     assert(kwds == NULL || PyDict_Check(kwds));
 
+    // 如果metaclass是type的话
     /* Special case: type(x) should return x->ob_type */
     /* We only want type itself to accept the one-argument form (#27157)
        Note: We don't call PyType_CheckExact as that also allows subclasses */
     if (metatype == &PyType_Type) {
+        // 获取位置参数和关键字参数个数
         const Py_ssize_t nargs = PyTuple_GET_SIZE(args);
         const Py_ssize_t nkwds = kwds == NULL ? 0 : PyDict_GET_SIZE(kwds);
 
+        // 位置参数为1，关键字参数为0，你想到了什么
+        // type(xxx)，是不是这个
         if (nargs == 1 && nkwds == 0) {
             PyObject *x = PyTuple_GET_ITEM(args, 0);
             Py_INCREF(Py_TYPE(x));
+            // 查看一个变量指向的对象的类型，获取类型之后直接返回
             return (PyObject *) Py_TYPE(x);
         }
 
+        // 如果上面的if不满足，会走到这里
+        // 表示现在不再是查看类型了，而是创建类
+        // 那么要求位置参数必须是3个，否则报错
         /* SF bug 475327 -- if that didn't trigger, we need 3
            arguments. but PyArg_ParseTuple below may give
            a msg saying type() needs exactly 3. */
@@ -2361,15 +2381,28 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         }
     }
 
+    // 现在显然是确定参数类型，因为传递的三个参数是有类型要求的
+    // 必须是PyUnicodeObject、PyTupleObject、PyDictObject
     /* Check arguments: (name, bases, dict) */
     if (!PyArg_ParseTuple(args, "UO!O!:type.__new__", &name, &PyTuple_Type,
                           &bases, &PyDict_Type, &orig_dict))
+    /*
+        TypeError: type.__new__() argument 1 must be str, not xxx
+        TypeError: type.__new__() argument 2 must be tuple, not xxx
+        TypeError: type.__new__() argument 3 must be dict, not xxx
+    */
         return NULL;
+    // 无论是实用class关键字创建类，还是使用type创建类
+    // 底层都是执行的type_new
 
+    // 处理基类
     /* Adjust for empty tuple bases */
     nbases = PyTuple_GET_SIZE(bases);
     if (nbases == 0) {
+        // 如果没有继承基类，那么会默认继承object
+        // __base__ 设置为object
         base = &PyBaseObject_Type;
+        // __bases__ 设置为 (object,)
         bases = PyTuple_Pack(1, base);
         if (bases == NULL)
             return NULL;
@@ -2377,11 +2410,16 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     }
     else {
         _Py_IDENTIFIER(__mro_entries__);
+        // 如果继承了基类，那么循环遍历bases
         for (i = 0; i < nbases; i++) {
+            // 拿到每一个基类
             tmp = PyTuple_GET_ITEM(bases, i);
+            // 如果类型为&PyType_Type，进行下一次循环
             if (PyType_Check(tmp)) {
                 continue;
             }
+            // 如果类型不是&PyType_Type，说明继承的不是类
+            // 于是寻找__mro_entries__
             if (_PyObject_LookupAttrId(tmp, &PyId___mro_entries__, &tmp) < 0) {
                 return NULL;
             }
@@ -2393,6 +2431,8 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
                 return NULL;
             }
         }
+        // 寻找父类的metaclas
+        // 采用之前说的解决元类冲突时所采取的策略
         /* Search the bases for the proper metatype to deal with this: */
         winner = _PyType_CalculateMetaclass(metatype, bases);
         if (winner == NULL) {
@@ -2405,6 +2445,11 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
             metatype = winner;
         }
 
+        // 每个类都有 __base__ 和 __bases__
+        // __bases__ 表示直接继承的素有类, __base__ 是继承的第一个类
+        // 那么下面这行代码是做什么呢？直接 base = bases[0]就好了
+        // 其实这个 best_base 所做的事情没有这么简单
+        // 它还负责检测基类之间是否发生了冲突
         /* Calculate best base, and check that all bases are type objects */
         base = best_base(bases);
         if (base == NULL) {
@@ -2420,6 +2465,8 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     if (dict == NULL)
         goto error;
 
+    // 处理用户定义了__slots__属性的逻辑
+    // 一旦定义了__slots__，那么类的实例对象就没有属性字典了
     /* Check for a __slots__ sequence variable in dict, and count it */
     slots = _PyDict_GetItemIdWithError(dict, &PyId___slots__);
     nslots = 0;
@@ -2564,6 +2611,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         }
     }
 
+    // 为自定义类对象申请内存
     /* Allocate the type object */
     type = (PyTypeObject *)metatype->tp_alloc(metatype, nslots);
     if (type == NULL)
@@ -2576,12 +2624,14 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     et->ht_slots = slots;
     slots = NULL;
 
+    // 初始化tp_flags
     /* Initialize tp_flags */
     // All heap types need GC, since we can create a reference cycle by storing
     // an instance on one of its parents:
     type->tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HEAPTYPE |
         Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC;
 
+    // 设置PyTypeObject中各个域
     /* Initialize essential fields */
     type->tp_as_async = &et->as_async;
     type->tp_as_number = &et->as_number;
@@ -2597,16 +2647,19 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         goto error;
     }
 
+    // 设置基类和基类列表
     /* Set tp_base and tp_bases */
     type->tp_bases = bases;
     bases = NULL;
     Py_INCREF(base);
     type->tp_base = base;
 
+    // 设置属性字典
     /* Initialize tp_dict from passed-in dict */
     Py_INCREF(dict);
     type->tp_dict = dict;
 
+    // 设置 __module__
     /* Set __module__ in the dict */
     if (_PyDict_GetItemIdWithError(dict, &PyId___module__) == NULL) {
         if (PyErr_Occurred()) {
@@ -2626,6 +2679,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         }
     }
 
+    // 设置 __qualname__，即"全限定名"
     /* Set ht_qualname to dict['__qualname__'] if available, else to
        __name__.  The __qualname__ accessor will look for ht_qualname.
     */
@@ -2675,6 +2729,8 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         }
     }
 
+    // 如果自定义的class中重写了__new__方法
+    // 将__new__对应的函数改造为静态方法，并替换掉默认的__new__
     /* Special-case __new__: if it's a plain function,
        make it a static function */
     tmp = _PyDict_GetItemIdWithError(dict, &PyId___new__);
@@ -2692,6 +2748,8 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         goto error;
     }
 
+    // 获取__init__subclass__，如果子类继承了父类
+    // 那么会触发父类的__init_subclass__
     /* Special-case __init_subclass__ and __class_getitem__:
        if they are plain functions, make them classmethods */
     tmp = _PyDict_GetItemIdWithError(dict, &PyId___init_subclass__);
@@ -2709,6 +2767,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         goto error;
     }
 
+    // 设置 __class_getitem__，这个是什么？类似于__getitem__
     tmp = _PyDict_GetItemIdWithError(dict, &PyId___class_getitem__);
     if (tmp != NULL && PyFunction_Check(tmp)) {
         tmp = PyClassMethod_New(tmp);
@@ -2755,6 +2814,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         type->tp_weaklistoffset = slotoffset;
         slotoffset += sizeof(PyObject *);
     }
+    // 为自定义类对象对应的实例对象设置内存大小信息
     type->tp_basicsize = slotoffset;
     type->tp_itemsize = base->tp_itemsize;
     type->tp_members = PyHeapType_GET_MEMBERS(et);
@@ -2802,6 +2862,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         goto error;
     }
 
+    // 调用PyType_Ready对自定义类对象进行初始化
     /* Initialize the rest */
     if (PyType_Ready(type) < 0)
         goto error;
