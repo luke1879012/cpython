@@ -2867,6 +2867,7 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
     if (PyType_Ready(type) < 0)
         goto error;
 
+    // 将 object 的 tp_init 改成 slot_tp_init
     /* Put the proper slots in place */
     fixup_slot_dispatchers(type);
 
@@ -6883,11 +6884,15 @@ slot_tp_init(PyObject *self, PyObject *args, PyObject *kwds)
 {
     _Py_IDENTIFIER(__init__);
     int unbound;
+    // 虚拟机会调用 lookup_method 函数
+    // 从自定义类对象的MRO中搜索属性__init__
     PyObject *meth = lookup_method(self, &PyId___init__, &unbound);
+    // 返回结果
     PyObject *res;
 
     if (meth == NULL)
         return -1;
+    // 执行
     if (unbound) {
         res = _PyObject_Call_Prepend(meth, self, args, kwds);
     }
@@ -6897,6 +6902,7 @@ slot_tp_init(PyObject *self, PyObject *args, PyObject *kwds)
     Py_DECREF(meth);
     if (res == NULL)
         return -1;
+    // 如果返回的不是None，那么报错
     if (res != Py_None) {
         PyErr_Format(PyExc_TypeError,
                      "__init__() should return None, not '%.200s'",
