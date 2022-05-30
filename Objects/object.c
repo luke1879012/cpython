@@ -929,22 +929,40 @@ _PyObject_SetAttrId(PyObject *v, _Py_Identifier *name, PyObject *w)
 PyObject *
 PyObject_GetAttr(PyObject *v, PyObject *name)
 {
+    // v: 对象
+    // name: 属性名
+
+    // 获取类型对象
     PyTypeObject *tp = Py_TYPE(v);
 
+    // name必须是一个字符串
     if (!PyUnicode_Check(name)) {
         PyErr_Format(PyExc_TypeError,
                      "attribute name must be string, not '%.200s'",
                      name->ob_type->tp_name);
         return NULL;
     }
+    // 通过类型对象的 tp_getattro 成员获取对象的属性
+    // 所以实例获取属性(包括方法)的时候都是通过类来获取的
+    // 比如 g.xx() 本质上就是 Girl.xx(g)
+    // 但是 Girl.xx(g) 是不是长得有点丑，于是 Python 提供了 g.xx()
+    // 所以 g.xx() 就是Girl.xx(g)的一个语法糖，底层还是通过 Girl.xx(g)执行的
+    // 虽然 g.xx() 等价于 Girl.xx(g)，但是 Girl.xx() 仍是 Girl.xx()
+    // 实例调用的时候会将自身作为参数传进去，但是类不会
+    // 日次类获取的话(Girl.xx)叫函数，实例获取(girl.xx)的话叫方法
     if (tp->tp_getattro != NULL)
         return (*tp->tp_getattro)(v, name);
+
+    // tp_gerattro 和 tp_getattr 功能一样，但是前者可以支持中文
+    // tp_getattr 已不推荐使用
     if (tp->tp_getattr != NULL) {
         const char *name_str = PyUnicode_AsUTF8(name);
         if (name_str == NULL)
             return NULL;
         return (*tp->tp_getattr)(v, (char *)name_str);
     }
+
+    // 属性不存在，抛出异常
     PyErr_Format(PyExc_AttributeError,
                  "'%.50s' object has no attribute '%U'",
                  tp->tp_name, name);
@@ -1224,13 +1242,19 @@ _PyObject_GenericGetAttrWithDict(PyObject *obj, PyObject *name,
        When suppress=1, this function suppress AttributeError.
     */
 
+    // 拿到obj的类型对象
+    // 对于我们的例子来说，显然是class Girl
     PyTypeObject *tp = Py_TYPE(obj);
+    // 描述符
     PyObject *descr = NULL;
+    // 返回值
     PyObject *res = NULL;
+    // 描述符的__get__函数
     descrgetfunc f;
     Py_ssize_t dictoffset;
     PyObject **dictptr;
 
+    // name 必须是字符串
     if (!PyUnicode_Check(name)){
         PyErr_Format(PyExc_TypeError,
                      "attribute name must be string, not '%.200s'",
@@ -1239,18 +1263,31 @@ _PyObject_GenericGetAttrWithDict(PyObject *obj, PyObject *name,
     }
     Py_INCREF(name);
 
+    // 属性字典不为空，是初始化是否完成的重要标志
+    // 如果为空，说明还没有初始化，那么需要先初始化
     if (tp->tp_dict == NULL) {
         if (PyType_Ready(tp) < 0)
             goto done;
     }
 
+    // 从 mro 顺序列表中获取属性对象的值，并检测是否为描述符
+    // 如果属性不存在、或者存在但对应的值不是描述符，则返回NULL
     descr = _PyType_Lookup(tp, name);
 
     f = NULL;
     if (descr != NULL) {
         Py_INCREF(descr);
+        // 如果 descr 不为 NULL，说明该属性被代理了
+        // descr 是描述符，f就是它的__get__方法
+        // f = descr.__class__.__get__
         f = descr->ob_type->tp_descr_get;
+        // 补充:
+        // __get__ 对应 PyTypeObject 的 tp_descr_get
+        // __set__ 对应 PyTypeObject 的 tp_descr_set
+
+        // f不为NULL，并且descr是数据描述符
         if (f != NULL && PyDescr_IsData(descr)) {
+            // 那么直接调用描述符的__get__方法，返回结果
             res = f(descr, obj, (PyObject *)obj->ob_type);
             if (res == NULL && suppress &&
                     PyErr_ExceptionMatches(PyExc_AttributeError)) {
@@ -1260,9 +1297,14 @@ _PyObject_GenericGetAttrWithDict(PyObject *obj, PyObject *name,
         }
     }
 
+    // 走到这说明要获取的属性没有被代理，或者说代理它的非数据描述符
+    // 当然还有一种情况，就是属性被数据描述符代理，但是该数据描述符没有__get__
+    // 那么仍会优先从实例对象自身的__dict__中寻找属性
     if (dict == NULL) {
         /* Inline _PyObject_GetDictPtr */
         dictoffset = tp->tp_dictoffset;
+        // 但如果dict为NULL，并且dictoffset不为0
+        // 说明继承自变长对象，那么要调整tp_dictoffset
         if (dictoffset != 0) {
             if (dictoffset < 0) {
                 Py_ssize_t tsize;
@@ -1282,6 +1324,7 @@ _PyObject_GenericGetAttrWithDict(PyObject *obj, PyObject *name,
             dict = *dictptr;
         }
     }
+    // dict 不为NULL，从字典中获取
     if (dict != NULL) {
         Py_INCREF(dict);
         res = PyDict_GetItemWithError(dict, name);
@@ -1303,7 +1346,15 @@ _PyObject_GenericGetAttrWithDict(PyObject *obj, PyObject *name,
         }
     }
 
+    // 程序走到这里，说明什么呢？
+    // 显然意味着实例的属性字典里面没有要获取的属性
+    // 但如果下面的 f != NULL 成立，说明属性被代理了
+    // 并且代理属性的描述符是非数据描述符，它的优先级低于实例
+    // 所以实例会先到自身的属性字典中查找，找不到再去执行描述符的__get__
     if (f != NULL) {
+        // 第一个参数是描述符本身，也就是 __get__ 里面的self
+        // 第二个参数是实例对象，也就是 __get__ 里面的 instance
+        // 第三个参数是类对象，也是就是 __get__ 里面的 owner
         res = f(descr, obj, (PyObject *)Py_TYPE(obj));
         if (res == NULL && suppress &&
                 PyErr_ExceptionMatches(PyExc_AttributeError)) {
@@ -1312,12 +1363,18 @@ _PyObject_GenericGetAttrWithDict(PyObject *obj, PyObject *name,
         goto done;
     }
 
+    // 程序能走到这里，说明属性字典里面没有要找的属性
+    // 并且也没有执行描述符的 __get__
+    // 但如果 describe 还不为 NULL，这说明什么呢？
+    // 显然是该属性仍被描述符代理了，只是这个描述符没有__get__
+    // 如果是这种情况，那么会返回描述符本身
     if (descr != NULL) {
         res = descr;
         descr = NULL;
         goto done;
     }
 
+    // 找不到，就报错
     if (!suppress) {
         PyErr_Format(PyExc_AttributeError,
                      "'%.50s' object has no attribute '%U'",

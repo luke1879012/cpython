@@ -2977,10 +2977,16 @@ main_loop:
         }
 
         case TARGET(LOAD_ATTR): {
+            // 与LOAD_METHOD本质上是类似的，但更简单一些
+            // name 依旧是符号，这里指向字符串对象 "name"
             PyObject *name = GETITEM(names, oparg);
+            // 从栈顶获取变量 g
             PyObject *owner = TOP();
+            // res 显然就是获取属性返回的结果了
+            // 通过PyObject_GetAttr进行获取
             PyObject *res = PyObject_GetAttr(owner, name);
             Py_DECREF(owner);
+            // 设置到栈顶
             SET_TOP(res);
             if (res == NULL)
                 goto error;
@@ -3424,19 +3430,34 @@ main_loop:
         }
 
         case TARGET(LOAD_METHOD): {
+            // 从符号表中获取符号，因为是 g.get_info
+            // 那么这个name就指向字符串 "get_info"
             /* Designed to work in tandem with CALL_METHOD. */
             PyObject *name = GETITEM(names, oparg);
+            // 从栈顶获取元素obj，显然这个obj就是代码中的 g
             PyObject *obj = TOP();
+            // meth 是一个 PyObject * 指针
+            // 显然它要指向一个方法
             PyObject *meth = NULL;
 
+            // 这里是获取 obj 中和符号 name 绑定的方法，然后让meth指向它
+            // 具体做法就是调用 _Pybject_GetMethod，传入二级指针&meth
+            // 然后让 meth 存储的地址变成指向具体方法的地址
             int meth_found = _PyObject_GetMethod(obj, name, &meth);
 
+            // 如果 meth == NULL, raise AttributeError
             if (meth == NULL) {
                 /* Most likely attribute wasn't found. */
                 goto error;
             }
 
+            // 注意：无论是 Girl.get_info 、还是 g.get_info
+            // 对应的指令都是 LOAD_METHOD
+            // 类去调用的话，说明得到是一个未绑定的方法，说白了就是等价于函数
+            // 实例去调用的话，会得到一个绑定的方法，相当于对函数进行了封装
             if (meth_found) {
+                // 如果method_found为1，说明meth是一个绑定的方法，obj就是self
+                // 将meth设置为栈顶元素，然后再将 obj 压入栈中
                 /* We can bypass temporary bound method object.
                    meth is unbound method and obj is self.
 
@@ -3446,6 +3467,8 @@ main_loop:
                 PUSH(obj);  // self
             }
             else {
+                // 否则 meth 是一个未绑定的方法
+                // 那么将栈顶元素设置为NULL，然后将 meth 压入栈中
                 /* meth is not an unbound method (but a regular attr, or
                    something was returned by a descriptor protocol).  Set
                    the second element of the stack to NULL, to signal
