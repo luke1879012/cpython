@@ -3487,9 +3487,12 @@ main_loop:
             /* Designed to work in tamdem with LOAD_METHOD. */
             PyObject **sp, *res, *meth;
 
+            // 栈指针，指向运行时栈的栈顶
             sp = stack_pointer;
 
             meth = PEEK(oparg + 2);
+            // meth 为NULL，说明是函数
+            // 我们传递的参数从 oparg 开始
             if (meth == NULL) {
                 /* `meth` is NULL when LOAD_METHOD thinks that it's not
                    a method call.
@@ -3509,6 +3512,8 @@ main_loop:
                 stack_pointer = sp;
                 (void)POP(); /* POP the NULL. */
             }
+            // 否则是方法，我们传递的参数从 oparg + 1开始
+            // 而第一个参数显然要留给 self
             else {
                 /* This is a method call.  Stack layout:
 

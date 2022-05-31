@@ -47,11 +47,17 @@ method_vectorcall(PyObject *method, PyObject *const *args,
 {
     assert(Py_TYPE(method) == &PyMethod_Type);
     PyObject *self, *func, *result;
+    // 实例对象 self
     self = PyMethod_GET_SELF(method);
+    // 方法里面的成员函数
     func = PyMethod_GET_FUNCTION(method);
     Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
 
     if (nargsf & PY_VECTORCALL_ARGUMENTS_OFFSET) {
+        // 总之它的逻辑就是将 self 和我们传递的参数组合起来
+        // 通过 _PyOjbect_Vectorcall 对 func 进行调用
+        // 所以 method_vectorcall 只是负责组装参数
+        // 真正执行的依旧是PyFunctionObject的_PyObject_Vectorcall
         /* PY_VECTORCALL_ARGUMENTS_OFFSET is set, so we are allowed to mutate the vector */
         PyObject **newargs = (PyObject**)args - 1;
         nargs += 1;
@@ -109,22 +115,29 @@ PyMethod_New(PyObject *func, PyObject *self)
         return NULL;
     }
     im = free_list;
+    // 缓存池
     if (im != NULL) {
         free_list = (PyMethodObject *)(im->im_self);
         (void)PyObject_INIT(im, &PyMethod_Type);
         numfree--;
     }
+    // 缓存池如果空了，直接创建PyMehodObject对象
     else {
+        // 可以看到方法的类型在底层是 &PyMethod_Type
         im = PyObject_GC_New(PyMethodObject, &PyMethod_Type);
         if (im == NULL)
             return NULL;
     }
     im->im_weakreflist = NULL;
     Py_INCREF(func);
+    // im_func指向PyFunctionObject对象
     im->im_func = func;
     Py_XINCREF(self);
+    // im_self指向实例对象
     im->im_self = self;
+    // 会通过 method_vectorcall 来对方法进行调用
     im->vectorcall = method_vectorcall;
+    // 被 GC 跟踪
     _PyObject_GC_TRACK(im);
     return (PyObject *)im;
 }

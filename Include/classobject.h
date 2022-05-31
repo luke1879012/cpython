@@ -11,9 +11,16 @@ extern "C" {
 
 typedef struct {
     PyObject_HEAD
+    // 可调用的PyFunctionObject对象
     PyObject *im_func;   /* The callable object implementing the method */
+    // self参数，instance对象
     PyObject *im_self;   /* The instance it is bound to */
+    // 弱引用列表，不做讨论
     PyObject *im_weakreflist; /* List of weak references */
+    // 速度更快的矢量调用
+    // 因为方法和函数一样，肯定要被调用
+    // 所以它们都自己实现了一套调用方式: vectorcall
+    // 而没有走类型对象的 tp_call
     vectorcallfunc vectorcall;
 } PyMethodObject;
 

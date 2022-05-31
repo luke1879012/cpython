@@ -643,10 +643,26 @@ function_call(PyObject *func, PyObject *args, PyObject *kwargs)
 static PyObject *
 func_descr_get(PyObject *func, PyObject *obj, PyObject *type)
 {
+    // obj: 相当于 __get__ 里面的 instance
+    // type: 相当于 __get__ 里面的 owner
+
+    // 如果是类获取函数：那么obj为NULL，type为类对象本身
+    // 如果是实例获取函数：那么obj为实例，type仍是类对象本身
+
+    // 如果obj为空，说明是类获取
+    // 那么直接返回func本身，也就是原本的函数
+    // 所以被也被称为是 "未绑定的方法"
     if (obj == Py_None || obj == NULL) {
         Py_INCREF(func);
         return func;
     }
+    // 如果是实例对象，那么调用PyMehtod_New
+    // 将函数和实例绑定在一起，得到一个PyMethodObject对象
+    // 将成员函数 func 和实例 obj 绑定在一起
+    // 返回的结果被称为"被绑定的方法", 简称方法
+    // 而 func 会交给方法的 im_func 成员保存
+    // obj 则会交给方法的 im_self 保存
+    // im_func和im_self对应Python里面的__func__和__self__
     return PyMethod_New(func, obj);
 }
 
@@ -682,6 +698,7 @@ PyTypeObject PyFunction_Type = {
     0,                                          /* tp_iternext */
     0,                                          /* tp_methods */
     func_memberlist,                            /* tp_members */
+    // 注意下面这行
     func_getsetlist,                            /* tp_getset */
     0,                                          /* tp_base */
     0,                                          /* tp_dict */
@@ -749,6 +766,8 @@ cm_clear(classmethod *cm)
 static PyObject *
 cm_descr_get(PyObject *self, PyObject *obj, PyObject *type)
 {
+    // 这里的self就是 Python 里面的类 classmethod 的实例
+    // 只不过在虚拟机中，它的实例也叫 classmethod
     classmethod *cm = (classmethod *)self;
 
     if (cm->cm_callable == NULL) {
@@ -756,6 +775,8 @@ cm_descr_get(PyObject *self, PyObject *obj, PyObject *type)
                         "uninitialized classmethod object");
         return NULL;
     }
+    // 如果 type 为空，让 type= Py_TYPE(obj)
+    // 所以不管是类调用还是实例调用，第一个参数都是类
     if (type == NULL)
         type = (PyObject *)(Py_TYPE(obj));
     return PyMethod_New(cm->cm_callable, type);
@@ -858,6 +879,7 @@ PyTypeObject PyClassMethod_Type = {
     cm_getsetlist,                              /* tp_getset */
     0,                                          /* tp_base */
     0,                                          /* tp_dict */
+    // 也是一个描述符
     cm_descr_get,                               /* tp_descr_get */
     0,                                          /* tp_descr_set */
     offsetof(classmethod, cm_dict),             /* tp_dictoffset */
