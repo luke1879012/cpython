@@ -1402,6 +1402,7 @@ _PyObject_GenericSetAttrWithDict(PyObject *obj, PyObject *name,
     PyObject **dictptr;
     int res = -1;
 
+    // name必须指向PyUnicodeObject对象
     if (!PyUnicode_Check(name)){
         PyErr_Format(PyExc_TypeError,
                      "attribute name must be string, not '%.200s'",
@@ -1409,13 +1410,17 @@ _PyObject_GenericSetAttrWithDict(PyObject *obj, PyObject *name,
         return -1;
     }
 
+    // 字典为空、则进行初始化
     if (tp->tp_dict == NULL && PyType_Ready(tp) < 0)
         return -1;
 
     Py_INCREF(name);
 
+    // 获取描述符
     descr = _PyType_Lookup(tp, name);
 
+    // 如果描述符不为空，并且内部有 __set__
+    // 那么执行 __set__ 
     if (descr != NULL) {
         Py_INCREF(descr);
         f = descr->ob_type->tp_descr_set;
@@ -1434,6 +1439,8 @@ _PyObject_GenericSetAttrWithDict(PyObject *obj, PyObject *name,
     }*/
 
     if (dict == NULL) {
+        // PyObject_GenericGetAttr的关键代码
+        // 根据dictoffest获取dict对象
         dictptr = _PyObject_GetDictPtr(obj);
         if (dictptr == NULL) {
             if (descr == NULL) {
