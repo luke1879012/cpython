@@ -871,3 +871,6 @@ PyTypeObject PyModule_Type = {
     PyType_GenericNew,                          /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
 };
+
+// Python 的 <class 'module'>对应底层的PyModule_Type
+// 而导入进来的模块对象则对应底层的 PyModuleObject

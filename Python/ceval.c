@@ -3008,13 +3008,26 @@ main_loop:
         }
 
         case TARGET(IMPORT_NAME): {
+            // PyUnicodeObject 对象
+            // 比如import sys,那么这个那么就是字符串"sys"
             PyObject *name = GETITEM(names, oparg);
+            // 我们看到这里有一个 fromlist 和 level
+            // 显然需要从运行时栈中获取对应的值
+            // 在IMPORT_NAME之前有两个LOAD_CONST，将0和None压入了运行时栈
+            // 因此这里会从运行时栈中获取None和0，然后分别赋值给fromlist和level
             PyObject *fromlist = POP();
             PyObject *level = TOP();
+            // 一个PyModuleObject * ，指向模块对象
             PyObject *res;
+            // 调用import_name，将该函数的返回值赋值给res
+            // 这个函数接收了5个参数
+            // tstate: 线程状态对象，f: 栈帧，name: 模块名
+            // fromlist: 一个None，level: 0
             res = import_name(tstate, f, name, fromlist, level);
             Py_DECREF(level);
             Py_DECREF(fromlist);
+            // 设置为栈顶元素，后续通过 STORE_NAME 将其弹出
+            // 然后交给变量 sys 保存
             SET_TOP(res);
             if (res == NULL)
                 goto error;
@@ -5362,7 +5375,10 @@ import_name(PyThreadState *tstate, PyFrameObject *f,
     PyObject *import_func, *res;
     PyObject* stack[5];
 
+    // 获取内置函数 __import__
     import_func = _PyDict_GetItemIdWithError(f->f_builtins, &PyId___import__);
+    // 为NULL表示获取失败，显然这些都是Python底层做的检查
+    // 我们使用时不会出现，如果出现，只能说明解释器出问题了
     if (import_func == NULL) {
         if (!_PyErr_Occurred(tstate)) {
             _PyErr_SetString(tstate, PyExc_ImportError, "__import__ not found");
@@ -5370,12 +5386,14 @@ import_name(PyThreadState *tstate, PyFrameObject *f,
         return NULL;
     }
 
+    // 判断 __import__ 是否被重载了
     /* Fast path for not overloaded __import__. */
     if (import_func == tstate->interp->import_func) {
         int ilevel = _PyLong_AsInt(level);
         if (ilevel == -1 && _PyErr_Occurred(tstate)) {
             return NULL;
         }
+        // 未重载的话，调用PyImport_ImportModuleLevelObject
         res = PyImport_ImportModuleLevelObject(
                         name,
                         f->f_globals,
@@ -5385,6 +5403,7 @@ import_name(PyThreadState *tstate, PyFrameObject *f,
         return res;
     }
 
+    // 否则调用重载后的 __import__
     Py_INCREF(import_func);
 
     stack[0] = name;

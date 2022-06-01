@@ -1731,6 +1731,7 @@ PyImport_ImportModuleLevelObject(PyObject *name, PyObject *globals,
     PyInterpreterState *interp = _PyInterpreterState_GET_UNSAFE();
     int has_from;
 
+    // 名字不可以为空
     if (name == NULL) {
         PyErr_SetString(PyExc_ValueError, "Empty module name");
         goto error;
@@ -1739,6 +1740,7 @@ PyImport_ImportModuleLevelObject(PyObject *name, PyObject *globals,
     /* The below code is importlib.__import__() & _gcd_import(), ported to C
        for added performance. */
 
+    // 名字必须是PyUnicodeObject
     if (!PyUnicode_Check(name)) {
         PyErr_SetString(PyExc_TypeError, "module name must be a string");
         goto error;
@@ -1746,25 +1748,33 @@ PyImport_ImportModuleLevelObject(PyObject *name, PyObject *globals,
     if (PyUnicode_READY(name) < 0) {
         goto error;
     }
+    // level 不可以小于0
     if (level < 0) {
         PyErr_SetString(PyExc_ValueError, "level must be >= 0");
         goto error;
     }
 
+    // level大于0
     if (level > 0) {
+        // 在相应的父目录寻找，得到 abs_name
         abs_name = resolve_name(name, globals, level);
         if (abs_name == NULL)
             goto error;
     }
     else {  /* level == 0 */
+        // 否则的话，说明level==0
+        // 因为level要求是一个大于等于0的整数
         if (PyUnicode_GET_LENGTH(name) == 0) {
             PyErr_SetString(PyExc_ValueError, "Empty module name");
             goto error;
         }
+        // 此时直接将name赋值给abs_name
+        // 因为此时是绝对导入
         abs_name = name;
         Py_INCREF(abs_name);
     }
 
+    // 调用 PyImport_GetModule 获取 module 对象
     mod = PyImport_GetModule(abs_name);
     if (mod == NULL && PyErr_Occurred()) {
         goto error;
@@ -1867,6 +1877,7 @@ PyImport_ImportModuleLevelObject(PyObject *name, PyObject *globals,
         }
         if (path) {
             Py_DECREF(path);
+            // 调用函数，导入模块
             final_mod = _PyObject_CallMethodIdObjArgs(
                         interp->importlib, &PyId__handle_fromlist,
                         mod, fromlist, interp->import_func, NULL);
