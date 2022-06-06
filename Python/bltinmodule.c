@@ -315,12 +315,16 @@ builtin___import__(PyObject *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"name", "globals", "locals", "fromlist",
                              "level", 0};
+    // 初始化globals、fromlist 都为NULL
     PyObject *name, *globals = NULL, *locals = NULL, *fromlist = NULL;
+    // 0 表示默认绝对导入
     int level = 0;
 
+    // 从PyTupleObject中解析出需要的信息
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "U|OOOi:__import__",
                     kwlist, &name, &globals, &locals, &fromlist, &level))
         return NULL;
+    // 导入模块
     return PyImport_ImportModuleLevelObject(name, globals, locals,
                                             fromlist, level);
 }

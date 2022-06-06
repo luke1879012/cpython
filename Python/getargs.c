@@ -1441,6 +1441,9 @@ getbuffer(PyObject *arg, Py_buffer *view, const char **errmsg)
 /* Support for keyword arguments donated by
    Geoff Philbrick <philbric@delphi.hks.com> */
 
+// 参数解析函数，将 args和kwds中所包含的所有对象（指针）
+// 按照指定的格式formate解析成各种目标对象，
+// 可以是Python的对象，也可以是C的原生对象
 /* Return false (0) for error, else true. */
 int
 PyArg_ParseTupleAndKeywords(PyObject *args,
