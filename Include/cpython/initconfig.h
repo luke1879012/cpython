@@ -7,6 +7,7 @@ extern "C" {
 
 /* --- PyStatus ----------------------------------------------- */
 
+// 表示程序执行的状态，会检测是否发生了异常
 typedef struct {
     enum {
         _PyStatus_TYPE_OK=0,

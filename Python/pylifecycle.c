@@ -1395,6 +1395,7 @@ new_interpreter(PyThreadState **tstate_p)
 {
     PyStatus status;
 
+    // 运行时初始化，如果出现异常直接返回
     status = _PyRuntime_Initialize();
     if (_PyStatus_EXCEPTION(status)) {
         return status;
@@ -1409,12 +1410,15 @@ new_interpreter(PyThreadState **tstate_p)
        interpreters: disable PyGILState_Check(). */
     _PyGILState_check_enabled = 0;
 
+    // 创建一个进程状态对象
     PyInterpreterState *interp = PyInterpreterState_New();
     if (interp == NULL) {
         *tstate_p = NULL;
         return _PyStatus_OK();
     }
 
+    // 根据进程状态对象创建一个线程状态对象
+    // 维护对应OS线程的状态
     PyThreadState *tstate = PyThreadState_New(interp);
     if (tstate == NULL) {
         PyInterpreterState_Delete(interp);
@@ -1422,6 +1426,7 @@ new_interpreter(PyThreadState **tstate_p)
         return _PyStatus_OK();
     }
 
+    // 将GIL的控制权交给创建的线程
     PyThreadState *save_tstate = PyThreadState_Swap(tstate);
 
     /* Copy the current interpreter config into the new interpreter */
@@ -1557,11 +1562,15 @@ handle_error:
 PyThreadState *
 Py_NewInterpreter(void)
 {
+    // 线程状态对象
     PyThreadState *tstate = NULL;
+    // 传入线程对象，调用new_interpreter
     PyStatus status = new_interpreter(&tstate);
+    // 异常检测
     if (_PyStatus_EXCEPTION(status)) {
         Py_ExitStatusException(status);
     }
+    // 返回线程状态对象
     return tstate;
 
 }

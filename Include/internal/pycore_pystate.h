@@ -66,9 +66,15 @@ typedef PyObject* (*_PyFrameEvalFunction)(struct _frame *, int);
 // The PyInterpreterState typedef is in Include/pystate.h.
 struct _is {
 
+    // Python 支持多进程，多个进程也会以链表的形式进行组织
+    // 当前进程的下一个进程
     struct _is *next;
+    // 进程环境中的线程状态对象的集合
+    // 我们说线程状态对象会形成一个链表
+    // 这里就是链表的头结点
     struct _ts *tstate_head;
 
+    // 进程id
     int64_t id;
     int64_t id_refcount;
     int requires_idref;
@@ -172,6 +178,9 @@ struct _gilstate_runtime_state {
     int check_enabled;
     /* Assuming the current thread holds the GIL, this is the
        PyThreadState for the current thread. */
+    // 宏里面出现的 gilstate 就是该结构体实例
+    // tstate_current 指的就是当前活动的OS线程对应的状态对象
+    // 同时也可以理解为获取到GIL的Python线程
     _Py_atomic_address tstate_current;
     PyThreadFrameGetter getframe;
     /* The single PyInterpreterState used by this process'

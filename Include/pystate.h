@@ -19,8 +19,10 @@ struct _frame;
 struct _ts;
 struct _is;
 
+// ts 是 thread state 的简写
 /* struct _ts is defined in cpython/pystate.h */
 typedef struct _ts PyThreadState;
+// is 是 interpreter state 的简写
 /* struct _is is defined in internal/pycore_pystate.h */
 typedef struct _is PyInterpreterState;
 

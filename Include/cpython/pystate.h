@@ -51,12 +51,19 @@ typedef struct _err_stackitem {
 struct _ts {
     /* See Python/ceval.c for comments explaining most fields */
 
+    // 多个线程状态对象也会像链表一样串起来
+    // 因为一个进程里面是可以包含多个线程的
+    // prev 指向上一个线程状态对象
+    // next 指向下一个线程状态对象
     struct _ts *prev;
     struct _ts *next;
+    // 进程状态对象，表示该线程属于哪一个进程
     PyInterpreterState *interp;
 
+    // 栈帧对象，模拟线程中函数的调用堆栈
     /* Borrowed reference to the current frame (it can be NULL) */
     struct _frame *frame;
+    // 递归深度
     int recursion_depth;
     char overflowed; /* The stack has overflowed. Allow 50 more calls
                         to handle the runtime error. */
@@ -133,6 +140,7 @@ struct _ts {
     PyObject *context;
     uint64_t context_ver;
 
+    // 线程id
     /* Unique thread state id. */
     uint64_t id;
 
