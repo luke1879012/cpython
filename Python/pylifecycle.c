@@ -1456,13 +1456,18 @@ new_interpreter(PyThreadState **tstate_p)
     }
 
 
+    // 申请一个PyDictObject对象，用于 sys.modules
     /* XXX The following is lax in error checking */
     PyObject *modules = PyDict_New();
     if (modules == NULL) {
         return _PyStatus_ERR("can't make modules dictionary");
     }
+    // 然后让interp -> modules 维护 modules
+    // 由于 interp 表示的是进程状态对象，这说明什么？
+    // 显然是该进程内的多个线程共享同一个 sys.modules
     interp->modules = modules;
 
+    // 加载sys模块，所有的module对象都在sys.modules中
     PyObject *sysmod = _PyImport_FindBuiltin("sys", modules);
     if (sysmod != NULL) {
         interp->sysdict = PyModule_GetDict(sysmod);
@@ -1470,6 +1475,7 @@ new_interpreter(PyThreadState **tstate_p)
             goto handle_error;
         }
         Py_INCREF(interp->sysdict);
+        // 设置
         PyDict_SetItemString(interp->sysdict, "modules", modules);
         if (_PySys_InitMain(runtime, interp) < 0) {
             return _PyStatus_ERR("can't finish initializing sys");
@@ -1479,8 +1485,12 @@ new_interpreter(PyThreadState **tstate_p)
         goto handle_error;
     }
 
+    // 加载内置模块 buildtins
+    // 可以import builtins，并且builtins.list 等价于 list
     PyObject *bimod = _PyImport_FindBuiltin("builtins", modules);
     if (bimod != NULL) {
+        // 通过PyModule_GetDict获取属性字典，赋值给builtins
+        // 加速机制，直接访问interp->builtins，不需要到interp->modules查找
         interp->builtins = PyModule_GetDict(bimod);
         if (interp->builtins == NULL)
             goto handle_error;
@@ -1526,12 +1536,14 @@ new_interpreter(PyThreadState **tstate_p)
             return status;
         }
 
+        // 设置搜多module时的默认路径集合
         status = add_main_module(interp);
         if (_PyStatus_EXCEPTION(status)) {
             return status;
         }
 
         if (config->site_import) {
+            // 导入第三方包
             status = init_import_size();
             if (_PyStatus_EXCEPTION(status)) {
                 return status;
@@ -1618,10 +1630,13 @@ static PyStatus
 add_main_module(PyInterpreterState *interp)
 {
     PyObject *m, *d, *loader, *ann_dict;
+    // 将__main__添加进sys.modules中
+    // 创建 __main__ module，并将其加入到 interp->modules 中
     m = PyImport_AddModule("__main__");
     if (m == NULL)
         return _PyStatus_ERR("can't create __main__ module");
 
+    // 获取__main__的属性字典
     d = PyModule_GetDict(m);
     ann_dict = PyDict_New();
     if ((ann_dict == NULL) ||
@@ -1630,11 +1645,14 @@ add_main_module(PyInterpreterState *interp)
     }
     Py_DECREF(ann_dict);
 
+    // 获取interp->modules中的 __builtins__ module
     if (PyDict_GetItemString(d, "__builtins__") == NULL) {
         PyObject *bimod = PyImport_ImportModule("builtins");
         if (bimod == NULL) {
             return _PyStatus_ERR("Failed to retrieve builtins module");
         }
+        // 将<"__builtins__", __builtins>
+        // 加入到__main__ module 的dict中
         if (PyDict_SetItemString(d, "__builtins__", bimod) < 0) {
             return _PyStatus_ERR("Failed to initialize __main__.__builtins__");
         }
@@ -1668,6 +1686,7 @@ static PyStatus
 init_import_size(void)
 {
     PyObject *m;
+    // 核心调用方法
     m = PyImport_ImportModule("site");
     if (m == NULL) {
         return _PyStatus_ERR("Failed to import the site module");

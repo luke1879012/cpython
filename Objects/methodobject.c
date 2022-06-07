@@ -33,6 +33,7 @@ static PyObject * cfunction_vectorcall_O(
 PyObject *
 PyCFunction_New(PyMethodDef *ml, PyObject *self)
 {
+    // 创建PyCFunctionObject
     return PyCFunction_NewEx(ml, self, NULL);
 }
 
@@ -41,6 +42,7 @@ PyCFunction_NewEx(PyMethodDef *ml, PyObject *self, PyObject *module)
 {
     /* Figure out correct vectorcall function to use */
     vectorcallfunc vectorcall;
+    // 判断参数类型
     switch (ml->ml_flags & (METH_VARARGS | METH_FASTCALL | METH_NOARGS | METH_O | METH_KEYWORDS))
     {
         case METH_VARARGS:
@@ -68,6 +70,7 @@ PyCFunction_NewEx(PyMethodDef *ml, PyObject *self, PyObject *module)
     }
 
     PyCFunctionObject *op;
+    // 这里也采用了缓存池策略
     op = free_list;
     if (op != NULL) {
         free_list = (PyCFunctionObject *)(op->m_self);
@@ -75,10 +78,12 @@ PyCFunction_NewEx(PyMethodDef *ml, PyObject *self, PyObject *module)
         numfree--;
     }
     else {
+        // 否则重新申请
         op = PyObject_GC_New(PyCFunctionObject, &PyCFunction_Type);
         if (op == NULL)
             return NULL;
     }
+    // 设置属性
     op->m_weakreflist = NULL;
     op->m_ml = ml;
     Py_XINCREF(self);

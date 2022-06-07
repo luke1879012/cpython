@@ -8,11 +8,16 @@
 static Py_ssize_t max_module_number;
 
 typedef struct {
+    // 头部信息
     PyObject_HEAD
+    // 属性字典，所有的属性和值都在里面
     PyObject *md_dict;
+    // module对象包含的操作集合，里面是一些结构体
+    // 每个结构体对应一个函数的相关信息
     struct PyModuleDef *md_def;
     void *md_state;
     PyObject *md_weaklist;
+    // 模块名
     PyObject *md_name;  /* for logging purposes after md_dict is cleared */
 } PyModuleObject;
 
@@ -69,6 +74,7 @@ module_init_dict(PyModuleObject *mod, PyObject *md_dict,
     if (doc == NULL)
         doc = Py_None;
 
+    // 模块的一些属性、__name__、__doc__等等
     if (_PyDict_SetItemId(md_dict, &PyId___name__, name) != 0)
         return -1;
     if (_PyDict_SetItemId(md_dict, &PyId___doc__, doc) != 0)
@@ -91,15 +97,21 @@ module_init_dict(PyModuleObject *mod, PyObject *md_dict,
 PyObject *
 PyModule_NewObject(PyObject *name)
 {
+    // module对象的指针
     PyModuleObject *m;
+    // 为module对象申请空间
+    // 模块具有属性字典，所以是一个变长对象
     m = PyObject_GC_New(PyModuleObject, &PyModule_Type);
     if (m == NULL)
         return NULL;
+    // 设置相应属性，初始化为NULL
     m->md_def = NULL;
     m->md_state = NULL;
     m->md_weaklist = NULL;
     m->md_name = NULL;
+    // 属性字典
     m->md_dict = PyDict_New();
+    // 调用module_init_dict
     if (module_init_dict(m, m->md_dict, name, NULL) != 0)
         goto fail;
     PyObject_GC_Track(m);
@@ -113,10 +125,12 @@ PyModule_NewObject(PyObject *name)
 PyObject *
 PyModule_New(const char *name)
 {
+    // module对象的name、PyModuleObject *
     PyObject *nameobj, *module;
     nameobj = PyUnicode_FromString(name);
     if (nameobj == NULL)
         return NULL;
+    // 创建 PyModuleObject
     module = PyModule_NewObject(nameobj);
     Py_DECREF(nameobj);
     return module;
@@ -184,9 +198,17 @@ _PyModule_CreateInitialized(struct PyModuleDef* module, int module_api_version)
     const char* name;
     PyModuleObject *m;
 
+    // 初始化
     if (!PyModuleDef_Init(module))
         return NULL;
+    // 拿到 module 的 name
+    // 对于当前来说就是 __builtins__
     name = module->m_name;
+    // 这里比较有意思，这是检测模块版本的，针对的是需要导入的py文件
+    // 我们说编译成PyCodeObject对象之后
+    // 会直接从当前目录的__pycache__里面导入，那里都是pyc文件
+    // 而pyc文件的文件名是有Python解释器的版本号的
+    // 这里就是比较版本是否一致，不一致则不导入pyc文件，而是会重新编译py文件
     if (!check_api_version(name, module_api_version)) {
         return NULL;
     }
@@ -212,6 +234,7 @@ _PyModule_CreateInitialized(struct PyModuleDef* module, int module_api_version)
             _Py_PackageContext = NULL;
         }
     }
+    // 创建一个PyModuleObject
     if ((m = (PyModuleObject*)PyModule_New(name)) == NULL)
         return NULL;
 
@@ -226,12 +249,14 @@ _PyModule_CreateInitialized(struct PyModuleDef* module, int module_api_version)
     }
 
     if (module->m_methods != NULL) {
+        // 遍历methods中指定的module对象中应包含的操作集合
         if (PyModule_AddFunctions((PyObject *) m, module->m_methods) != 0) {
             Py_DECREF(m);
             return NULL;
         }
     }
     if (module->m_doc != NULL) {
+        // 设置docstring
         if (PyModule_SetDocString((PyObject *) m, module->m_doc) != 0) {
             Py_DECREF(m);
             return NULL;
@@ -472,6 +497,7 @@ PyModule_SetDocString(PyObject *m, const char *doc)
 PyObject *
 PyModule_GetDict(PyObject *m)
 {
+    // 获取属性字典
     PyObject *d;
     if (!PyModule_Check(m)) {
         PyErr_BadInternalCall();

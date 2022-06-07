@@ -2835,9 +2835,11 @@ _PyBuiltin_Init(void)
         PyType_Ready(&PyZip_Type) < 0)
         return NULL;
 
+    // 创建并设置 __builtins__
     mod = _PyModule_CreateInitialized(&builtinsmodule, PYTHON_API_VERSION);
     if (mod == NULL)
         return NULL;
+    // 拿到 __builtins__ 的属性字典
     dict = PyModule_GetDict(mod);
 
 #ifdef Py_TRACE_REFS
@@ -2852,11 +2854,13 @@ _PyBuiltin_Init(void)
 #define ADD_TO_ALL(OBJECT) (void)0
 #endif
 
+// 将所有内置对象加入到 __builtins__ 中
 #define SETBUILTIN(NAME, OBJECT) \
     if (PyDict_SetItemString(dict, NAME, (PyObject *)OBJECT) < 0)       \
         return NULL;                                                    \
     ADD_TO_ALL(OBJECT)
 
+    // 下面这些东西应该不陌生吧
     SETBUILTIN("None",                  Py_None);
     SETBUILTIN("Ellipsis",              Py_Ellipsis);
     SETBUILTIN("NotImplemented",        Py_NotImplemented);
@@ -2895,6 +2899,7 @@ _PyBuiltin_Init(void)
     }
     Py_DECREF(debug);
 
+    // 下一步需要到 Object/moduleobject.c 里面的 _PyModule_CreateInitialized
     return mod;
 #undef ADD_TO_ALL
 #undef SETBUILTIN

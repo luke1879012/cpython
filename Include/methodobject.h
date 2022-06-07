@@ -49,10 +49,22 @@ PyAPI_FUNC(PyObject *) _PyCFunction_FastCallDict(PyObject *func,
 #endif
 
 struct PyMethodDef {
+    // 内置函数的名称
     const char  *ml_name;   /* The name of the built-in function/method */
+    // 实现对应逻辑的C函数，但是需要转成PyCFunction类型
+    // 主要是为了更好的处理关键字参数
     PyCFunction ml_meth;    /* The C function that implements it */
+    /* 参数类型 
+       #define METH_VARARGS  0x0001  扩展位置参数
+       #define METH_KEYWORDS 0x0002  扩展关键字参数
+       #define METH_NOARGS   0x0004  不需要参数
+       #define METH_O        0x0008  需要一个参数
+       #define METH_CLASS    0x0010  被classmethod装饰
+       #define METH_STATIC   0x0020  被staticmethod装饰   
+    */
     int         ml_flags;   /* Combination of METH_xxx flags, which mostly
                                describe the args expected by the C func */
+    // 函数的__doc__
     const char  *ml_doc;    /* The __doc__ attribute, or NULL */
 };
 typedef struct PyMethodDef PyMethodDef;
@@ -95,11 +107,17 @@ PyAPI_FUNC(PyObject *) PyCFunction_NewEx(PyMethodDef *, PyObject *,
 
 #ifndef Py_LIMITED_API
 typedef struct {
+    // 头部信息
     PyObject_HEAD
+    // PyMethodDef
     PyMethodDef *m_ml; /* Description of the C function to call */
+    // self参数
     PyObject    *m_self; /* Passed as 'self' arg to the C func, can be NULL */
+    // __module__属性
     PyObject    *m_module; /* The __module__ attribute, can be anything */
+    // 弱引用列表，不讨论
     PyObject    *m_weakreflist; /* List of weak references */
+    // 为了效率而单独实现的调用函数
     vectorcallfunc vectorcall;
 } PyCFunctionObject;
 
