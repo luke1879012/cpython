@@ -319,11 +319,14 @@ pymain_run_module(const wchar_t *modname, int set_argv0)
 static int
 pymain_run_file(PyConfig *config, PyCompilerFlags *cf)
 {
+    // 获取文件名
     const wchar_t *filename = config->run_filename;
     if (PySys_Audit("cpython.run_file", "u", filename) < 0) {
         return pymain_exit_err_print();
     }
+    // 打开文件
     FILE *fp = _Py_wfopen(filename, L"rb");
+    // 如果fp为NULL，证明文件打开失败
     if (fp == NULL) {
         char *cfilename_buffer;
         const char *cfilename;
@@ -381,6 +384,7 @@ pymain_run_file(PyConfig *config, PyCompilerFlags *cf)
         filename_str = "<filename encoding error>";
     }
 
+    // 调用PyRun_AnyFileExFlags
     /* PyRun_AnyFileExFlags(closeit=1) calls fclose(fp) before running code */
     int run = PyRun_AnyFileExFlags(fp, filename_str, 1, cf);
     Py_XDECREF(bytes);

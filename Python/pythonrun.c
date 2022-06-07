@@ -80,13 +80,17 @@ PyRun_AnyFileExFlags(FILE *fp, const char *filename, int closeit,
 {
     if (filename == NULL)
         filename = "???";
+    // 根据fp是否代表交互环境，对程序进行流程控制
     if (Py_FdIsInteractive(fp, filename)) {
+        // 如果是交互环境，调用PyRun_InteractiveLoopFlags
         int err = PyRun_InteractiveLoopFlags(fp, filename, flags);
         if (closeit)
             fclose(fp);
         return err;
     }
     else
+        // 否则说明是一个普通的python脚本
+        // 执行PyRun_SimpleFileExFlags
         return PyRun_SimpleFileExFlags(fp, filename, closeit, flags);
 }
 
@@ -110,11 +114,13 @@ PyRun_InteractiveLoopFlags(FILE *fp, const char *filename_str, PyCompilerFlags *
     if (flags == NULL) {
         flags = &local_flags;
     }
+    // 创建交互式提示符
     v = _PySys_GetObjectId(&PyId_ps1);
     if (v == NULL) {
         _PySys_SetObjectId(&PyId_ps1, v = PyUnicode_FromString(">>> "));
         Py_XDECREF(v);
     }
+    // 创建多行的交互式提示符
     v = _PySys_GetObjectId(&PyId_ps2);
     if (v == NULL) {
         _PySys_SetObjectId(&PyId_ps2, v = PyUnicode_FromString("... "));
@@ -122,6 +128,10 @@ PyRun_InteractiveLoopFlags(FILE *fp, const char *filename_str, PyCompilerFlags *
     }
     err = 0;
     do {
+        // 这里就进入了交互式环境
+        // 我们看到每次都调用了PyRun_InteractiveOneObjectEx
+        // 直到下面的ret != E_EOF 不成立，停止循环
+        // 一般情况就是我们输入exit()退出了
         ret = PyRun_InteractiveOneObjectEx(fp, filename, flags);
         if (ret == -1 && PyErr_Occurred()) {
             /* Prevent an endless loop after multiple consecutive MemoryErrors
@@ -233,6 +243,7 @@ PyRun_InteractiveOneObjectEx(FILE *fp, PyObject *filename,
             }
         }
     }
+    // 编译用户在交互式环境下输入的python语句
     arena = PyArena_New();
     if (arena == NULL) {
         Py_XDECREF(v);
@@ -240,6 +251,7 @@ PyRun_InteractiveOneObjectEx(FILE *fp, PyObject *filename,
         Py_XDECREF(oenc);
         return -1;
     }
+    // 生成抽象语法树
     mod = PyParser_ASTFromFileObject(fp, filename, enc,
                                      Py_single_input, ps1, ps2,
                                      flags, &errcode, arena);
@@ -254,12 +266,14 @@ PyRun_InteractiveOneObjectEx(FILE *fp, PyObject *filename,
         }
         return -1;
     }
+    // 获取<module __main__>中维护的dict
     m = PyImport_AddModuleObject(mod_name);
     if (m == NULL) {
         PyArena_Free(arena);
         return -1;
     }
     d = PyModule_GetDict(m);
+    // 执行用户输入的python语句
     v = run_mod(mod, filename, d, d, flags, arena);
     PyArena_Free(arena);
     if (v == NULL) {
@@ -388,11 +402,15 @@ pyrun_simple_file(FILE *fp, PyObject *filename, int closeit,
     PyObject *m, *d, *v;
     int set_file_name = 0, ret = -1;
 
+    // __main__就是当前文件
     m = PyImport_AddModule("__main__");
     if (m == NULL)
         return -1;
     Py_INCREF(m);
+    // 还记得这个d吗？
+    // 当前活动frame对象的local和global名字空间
     d = PyModule_GetDict(m);
+    // 在__main__中设置__file__属性
     if (PyDict_GetItemString(d, "__file__") == NULL) {
         if (PyDict_SetItemString(d, "__file__", filename) < 0) {
             goto done;
@@ -408,8 +426,10 @@ pyrun_simple_file(FILE *fp, PyObject *filename, int closeit,
         goto done;
     }
 
+    // 如果是pyc
     if (pyc) {
         FILE *pyc_fp;
+        // 二进制模式打开
         /* Try to run a pyc file. First, re-open in binary */
         if (closeit) {
             fclose(fp);
@@ -436,6 +456,7 @@ pyrun_simple_file(FILE *fp, PyObject *filename, int closeit,
             ret = -1;
             goto done;
         }
+        // 执行脚本文件
         v = pyrun_file(fp, filename, Py_file_input, d, d,
                        closeit, flags);
     }
@@ -469,6 +490,7 @@ PyRun_SimpleFileExFlags(FILE *fp, const char *filename, int closeit,
     if (filename_obj == NULL) {
         return -1;
     }
+    // 脚本文件运行 核心函数
     int res = pyrun_simple_file(fp, filename_obj, closeit, flags);
     Py_DECREF(filename_obj);
     return res;
@@ -1073,6 +1095,7 @@ pyrun_file(FILE *fp, PyObject *filename, int start, PyObject *globals,
         return NULL;
     }
 
+    // 编译
     mod_ty mod;
     mod = PyParser_ASTFromFileObject(fp, filename, NULL, start, 0, 0,
                                      flags, NULL, arena);
@@ -1082,6 +1105,7 @@ pyrun_file(FILE *fp, PyObject *filename, int start, PyObject *globals,
 
     PyObject *ret;
     if (mod != NULL) {
+        // 执行，依旧调用了runmod
         ret = run_mod(mod, filename, globals, locals, flags, arena);
     }
     else {
