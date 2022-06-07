@@ -1187,6 +1187,7 @@ run_eval_code_obj(PyCodeObject *co, PyObject *globals, PyObject *locals)
         }
     }
 
+    // 调用了PyEval_EvalCode，然后会走到PyEval_EvalCode，最终调用_PyEval_EvalFrameDefault
     v = PyEval_EvalCode((PyObject*)co, globals, locals);
     if (!v && PyErr_Occurred() == PyExc_KeyboardInterrupt) {
         _Py_UnhandledKeyboardInterrupt = 1;
@@ -1200,6 +1201,7 @@ run_mod(mod_ty mod, PyObject *filename, PyObject *globals, PyObject *locals,
 {
     PyCodeObject *co;
     PyObject *v;
+    // 基于ast编译字节码指令序列，创建PyCodeObject对象
     co = PyAST_CompileObject(mod, filename, flags, -1, arena);
     if (co == NULL)
         return NULL;
@@ -1209,6 +1211,7 @@ run_mod(mod_ty mod, PyObject *filename, PyObject *globals, PyObject *locals,
         return NULL;
     }
 
+    // 创建PyFrameObject，执行PyCodeObject对象中的字节码指令序列
     v = run_eval_code_obj(co, globals, locals);
     Py_DECREF(co);
     return v;
