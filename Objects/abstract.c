@@ -1241,7 +1241,9 @@ PyNumber_Absolute(PyObject *o)
         return null_error();
     }
 
+    // 通过类型对象获取操作簇 PyNumberMethods
     m = o->ob_type->tp_as_number;
+    // 调用 nb_absolute
     if (m && m->nb_absolute)
         return m->nb_absolute(o);
 

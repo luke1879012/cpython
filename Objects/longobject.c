@@ -4502,9 +4502,12 @@ long_neg(PyLongObject *v)
 static PyObject *
 long_abs(PyLongObject *v)
 {
+    // 整型的取绝对值
     if (Py_SIZE(v) < 0)
+        // 如果v小于0，那么取相反数
         return long_neg(v);
     else
+        // 否则返回本身
         return long_long((PyObject *)v);
 }
 
