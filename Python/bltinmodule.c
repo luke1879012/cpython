@@ -904,8 +904,11 @@ finally:
 static PyObject *
 builtin_dir(PyObject *self, PyObject *args)
 {
+    // dir 函数
     PyObject *arg = NULL;
 
+    // 要么不接受参数，要么接受一个参数
+    // 如果没有接受参数，那么arg就是NULL，否则就是我们的参数
     if (!PyArg_UnpackTuple(args, "dir", 0, 1, &arg))
         return NULL;
     return PyObject_Dir(arg);

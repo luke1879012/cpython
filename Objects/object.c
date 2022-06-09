@@ -1565,10 +1565,12 @@ _dir_locals(void)
     PyObject *names;
     PyObject *locals;
 
+    // 获取当前的local空间
     locals = PyEval_GetLocals();
     if (locals == NULL)
         return NULL;
 
+    // 拿到所有的key，注意：PyMapping_Keys 返回的是列表
     names = PyMapping_Keys(locals);
     if (!names)
         return NULL;
@@ -1579,10 +1581,12 @@ _dir_locals(void)
         Py_DECREF(names);
         return NULL;
     }
+    // 排序
     if (PyList_Sort(names)) {
         Py_DECREF(names);
         return NULL;
     }
+    // 返回
     /* the locals don't need to be DECREF'd */
     return names;
 }
@@ -1600,11 +1604,13 @@ _dir_object(PyObject *obj)
             PyErr_SetString(PyExc_TypeError, "object does not provide __dir__");
         return NULL;
     }
+    // 调用 __dir__ 
     /* use __dir__ */
     result = _PyObject_CallNoArg(dirfunc);
     Py_DECREF(dirfunc);
     if (result == NULL)
         return NULL;
+    // 排序
     /* return sorted(result) */
     sorted = PySequence_List(result);
     Py_DECREF(result);
@@ -1624,6 +1630,8 @@ _dir_object(PyObject *obj)
 PyObject *
 PyObject_Dir(PyObject *obj)
 {
+    // 当obj为NULL，说明我们没有传参，那么返回local空间
+    // 否则返回对象的所有属性的名称
     return (obj == NULL) ? _dir_locals() : _dir_object(obj);
 }
 
