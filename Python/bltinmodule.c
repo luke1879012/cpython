@@ -1139,16 +1139,21 @@ builtin_getattr(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 {
     PyObject *v, *name, *result;
 
+    // 参数个数必须是 2 或者 3
+    // 对象、属性名、可选的默认值
     if (!_PyArg_CheckPositional("getattr", nargs, 2, 3))
         return NULL;
 
+    // 获取对象和属性名
     v = args[0];
     name = args[1];
+    // name必须是字符串
     if (!PyUnicode_Check(name)) {
         PyErr_SetString(PyExc_TypeError,
                         "getattr(): attribute name must be string");
         return NULL;
     }
+    // 调用对象的 __getattr__，找不到返回默认值
     if (nargs > 2) {
         if (_PyObject_LookupAttr(v, name, &result) == 0) {
             PyObject *dflt = args[2];
