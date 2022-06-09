@@ -41,21 +41,38 @@ struct _pending_calls {
 };
 
 struct _ceval_runtime_state {
+    // 递归限制，可以通过sys.getrecursionlimit()查看
     int recursion_limit;
+
+    // 记录是否对任意线程启用跟踪
+    // 同时计算 tstate->c_tracefunc 为空的线程数
+    // 如果该值为0，那么将不会检查该线程的 c_tracefunc
+    // 这会加快 PyEval_EvalFrameEx() 中fast_next_opcode之后的if语句
     /* Records whether tracing is on for any thread.  Counts the number
        of threads for which tstate->c_tracefunc is non-NULL, so if the
        value is 0, we know we don't have to check this thread's
        c_tracefunc.  This speeds up the if statement in
        PyEval_EvalFrameEx() after fast_next_opcode. */
     int tracing_possible;
+
+    // eval循环中所有跳出快速通道的请求数
     /* This single variable consolidates all requests to break out of
        the fast path in the eval loop. */
     _Py_atomic_int eval_breaker;
+
+    // 是否要求放弃GIL
     /* Request for dropping the GIL */
     _Py_atomic_int gil_drop_request;
+
+    // 线程调度相关，比如：加锁
     struct _pending_calls pending;
+
+    // 信号检测相关
     /* Request for checking signals. */
     _Py_atomic_int signals_pending;
+    
+    // 重点来了，GIL
+    // 我们看到 GIL 是一个 struct _gil_runtime_state 结构体实例
     struct _gil_runtime_state gil;
 };
 

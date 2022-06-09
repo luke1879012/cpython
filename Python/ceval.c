@@ -197,22 +197,35 @@ PyEval_ThreadsInitialized(void)
     return gil_created(&_PyRuntime.ceval.gil);
 }
 
+// 创建多线程的时候，首先调用这个函数进行初始化
 void
 PyEval_InitThreads(void)
 {
+    // 获取运行时状态对象
     _PyRuntimeState *runtime = &_PyRuntime;
+    // 拿到ceval，它是 struct _ceval_runtime_state 类型
+    // 而 GIL 对应的字段就内嵌在里面
     struct _ceval_runtime_state *ceval = &runtime->ceval;
+    // 获取GIL
     struct _gil_runtime_state *gil = &ceval->gil;
+    // 如果 GIL 已经创建，那么直接返回
     if (gil_created(gil)) {
         return;
     }
 
+    // 线程的初始化
     PyThread_init_thread();
+    // 创建gil
     create_gil(gil);
+    // 获取线程状态对象
     PyThreadState *tstate = _PyRuntimeState_GetThreadState(runtime);
+    // GIL 创建了，那么就要拿到这个GIL
     take_gil(ceval, tstate);
 
+    // 这个是和线程调度相关的
     struct _pending_calls *pending = &ceval->pending;
+    // 如果拿到了GIL了，其他线程就不能获取了
+    // 那么不好意思这个时候要加锁
     pending->lock = PyThread_allocate_lock();
     if (pending->lock == NULL) {
         Py_FatalError("Can't initialize threads for pending calls");
@@ -1234,15 +1247,26 @@ main_loop:
                 }
             }
 
+            // 检测 gil_drop_request 是否为1
+            // 如果为1，则表示时间片用尽了，应该释放 GIL 了
+            // 如果为0，则表示时间片没用尽，还可以继续执行字节码
             if (_Py_atomic_load_relaxed(&ceval->gil_drop_request)) {
                 /* Give another thread a chance */
                 if (_PyThreadState_Swap(&runtime->gilstate, NULL) != tstate) {
                     Py_FatalError("ceval: tstate mix-up");
                 }
+                // 释放GIL
                 drop_gil(ceval, tstate);
 
                 /* Other threads may run now */
 
+                // 释放GIL后，怎么办呢？显然还要继续正确，等待下一次调用
+                // 于是再次尝试获取 GIL，而这一步是阻塞的
+                // 假设总共有N个线程，那么会有N-1个线程阻塞在此处
+                // 因为 GIL 每次只能被一个线程获取
+                // 一旦当持有GIL的线程的时间片用尽，调用drop_gil释放之后
+                // 那么阻塞在此的N-1个线程，会有一个因获取到GIl而停止阻塞
+                // 至于刚刚释放的 GIL 的线程会因为要再次获取而阻塞在这里
                 take_gil(ceval, tstate);
 
                 /* Check if we should make a quick exit. */

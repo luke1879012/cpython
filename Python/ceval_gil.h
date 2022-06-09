@@ -88,6 +88,7 @@
     } \
 
 
+// 获取GIL的时间（微秒）
 #define DEFAULT_INTERVAL 5000
 
 static void _gil_initialize(struct _gil_runtime_state *gil)
@@ -97,13 +98,17 @@ static void _gil_initialize(struct _gil_runtime_state *gil)
     gil->interval = DEFAULT_INTERVAL;
 }
 
+// GIL是否已被创建
 static int gil_created(struct _gil_runtime_state *gil)
 {
+    // 检测 GIL 有么有被创建
     return (_Py_atomic_load_explicit(&gil->locked, _Py_memory_order_acquire) >= 0);
 }
 
+// 创建GIL
 static void create_gil(struct _gil_runtime_state *gil)
 {
+    // 创建GIL，下面是负责初始化 GIL 里面的字段
     MUTEX_INIT(gil->mutex);
 #ifdef FORCE_SWITCHING
     MUTEX_INIT(gil->switch_mutex);
@@ -140,6 +145,7 @@ static void recreate_gil(struct _gil_runtime_state *gil)
     create_gil(gil);
 }
 
+// 释放持有的GIL
 static void
 drop_gil(struct _ceval_runtime_state *ceval, PyThreadState *tstate)
 {
@@ -180,6 +186,7 @@ drop_gil(struct _ceval_runtime_state *ceval, PyThreadState *tstate)
 #endif
 }
 
+// 获取创建的GIL
 static void
 take_gil(struct _ceval_runtime_state *ceval, PyThreadState *tstate)
 {
@@ -191,10 +198,15 @@ take_gil(struct _ceval_runtime_state *ceval, PyThreadState *tstate)
     int err = errno;
     MUTEX_LOCK(gil->mutex);
 
+    // 判断 GIL 是否被释放
+    // 如果被释放，那么直接跳转到_ready
     if (!_Py_atomic_load_relaxed(&gil->locked)) {
         goto _ready;
     }
 
+    // 走到这里说明 GIL 没有被释放，还被某个线程所占有
+    // 那么会阻塞在这里，一直请求获取GIL
+    // 直到 GIL 被释放，while 条件为假，结束循环
     while (_Py_atomic_load_relaxed(&gil->locked)) {
         int timed_out = 0;
         unsigned long saved_switchnum;
@@ -219,6 +231,8 @@ _ready:
        see drop_gil(). */
     MUTEX_LOCK(gil->switch_mutex);
 #endif
+    // GIL一次只能被一个线程获取，因此获取到 GIL 的时候，要进行独占
+    // 于是会通过_Py_atomic_store_relaxed对其再次上锁
     /* We now hold the GIL */
     _Py_atomic_store_relaxed(&gil->locked, 1);
     _Py_ANNOTATE_RWLOCK_ACQUIRED(&gil->locked, /*is_write=*/1);

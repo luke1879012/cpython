@@ -616,6 +616,7 @@ new_threadstate(PyInterpreterState *interp, int init)
     tstate->context_ver = 1;
 
     if (init) {
+        // 将线程对应的线程对象放入到"线程状态对象链表"当中
         _PyThreadState_Init(runtime, tstate);
     }
 
@@ -640,6 +641,7 @@ new_threadstate(PyInterpreterState *interp, int init)
     return tstate;
 }
 
+// 创建新城状态对象
 PyThreadState *
 PyThreadState_New(PyInterpreterState *interp)
 {
@@ -888,6 +890,7 @@ _PyThreadState_DeleteCurrent(_PyRuntimeState *runtime)
         PyThread_tss_set(&gilstate->autoTSSkey, NULL);
     }
     _PyRuntimeGILState_SetThreadState(gilstate, NULL);
+    // 释放GIL
     PyEval_ReleaseLock();
 }
 
