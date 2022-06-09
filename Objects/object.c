@@ -1553,6 +1553,7 @@ PyCallable_Check(PyObject *x)
 {
     if (x == NULL)
         return 0;
+    // 看一下有没有实现__call__（就这？）
     return x->ob_type->tp_call != NULL;
 }
 
