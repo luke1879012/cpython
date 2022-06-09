@@ -1246,6 +1246,7 @@ static PyObject *
 builtin_id(PyModuleDef *self, PyObject *v)
 /*[clinic end generated code: output=0aa640785f697f65 input=5a534136419631f4]*/
 {
+    // 将v转成整数，返回即可
     PyObject *id = PyLong_FromVoidPtr(v);
 
     if (id && PySys_Audit("builtins.id", "O", id) < 0) {
