@@ -2374,20 +2374,28 @@ static PyObject *
 builtin_sum_impl(PyObject *module, PyObject *iterable, PyObject *start)
 /*[clinic end generated code: output=df758cec7d1d302f input=162b50765250d222]*/
 {
+    // result 就是返回值，初始等于第二个参数
+    // 如果可迭代对象为空，那么返回的就是第二个参数
+    // 比如 sum([],123) 得到的就是123
     PyObject *result = start;
     PyObject *temp, *item, *iter;
 
+    // 获取可迭代对象的类型对象
     iter = PyObject_GetIter(iterable);
     if (iter == NULL)
         return NULL;
 
+    // 如果result为NULL，说明我们没有传递第二个参数
     if (result == NULL) {
+        // 那么result赋值为0
         result = PyLong_FromLong(0);
         if (result == NULL) {
             Py_DECREF(iter);
             return NULL;
         }
     } else {
+        // 否则的话，检测是不是str、bytes、bytearray 类型
+        // 如果是的话，依旧报错，并提示使用 join 方法
         /* reject string values for 'start' parameter */
         if (PyUnicode_Check(result)) {
             PyErr_SetString(PyExc_TypeError,
@@ -2411,11 +2419,14 @@ builtin_sum_impl(PyObject *module, PyObject *iterable, PyObject *start)
     }
 
 #ifndef SLOW_SUM
+    // 这里是快分支
+    // 假设所有的元素都是整数
     /* Fast addition by keeping temporary sums in C instead of new Python objects.
        Assumes all inputs are the same type.  If the assumption fails, default
        to the more general routine.
     */
     if (PyLong_CheckExact(result)) {
+        // 将所有整数都迭代出来，依次相加
         int overflow;
         long i_result = PyLong_AsLongAndOverflow(result, &overflow);
         /* If this already overflowed, don't even enter the loop. */
@@ -2461,6 +2472,7 @@ builtin_sum_impl(PyObject *module, PyObject *iterable, PyObject *start)
     }
 
     if (PyFloat_CheckExact(result)) {
+        // 将素有浮点数都迭代出来，依次相加
         double f_result = PyFloat_AS_DOUBLE(result);
         Py_DECREF(result);
         result = NULL;
@@ -2509,7 +2521,9 @@ builtin_sum_impl(PyObject *module, PyObject *iterable, PyObject *start)
     }
 #endif
 
+    // 如果不全是整数或浮点数，执行通用逻辑
     for(;;) {
+        // 迭代元素
         item = PyIter_Next(iter);
         if (item == NULL) {
             /* error, or end-of-sequence */
@@ -2519,6 +2533,7 @@ builtin_sum_impl(PyObject *module, PyObject *iterable, PyObject *start)
             }
             break;
         }
+        // 和result依次相加
         /* It's tempting to use PyNumber_InPlaceAdd instead of
            PyNumber_Add here, to avoid quadratic running time
            when doing 'sum(list_of_lists, [])'.  However, this
@@ -2536,6 +2551,7 @@ builtin_sum_impl(PyObject *module, PyObject *iterable, PyObject *start)
             break;
     }
     Py_DECREF(iter);
+    // 返回
     return result;
 }
 
