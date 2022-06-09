@@ -1185,6 +1185,7 @@ builtin_globals_impl(PyObject *module)
 {
     PyObject *d;
 
+    // 获取栈帧的f_globals字段
     d = PyEval_GetGlobals();
     Py_XINCREF(d);
     return d;
@@ -1651,6 +1652,8 @@ builtin_locals_impl(PyObject *module)
 {
     PyObject *d;
 
+    // 在内部会通过线程状态对象拿到栈帧
+    // 再通过栈帧的f_locals字段拿到local空间
     d = PyEval_GetLocals();
     Py_XINCREF(d);
     return d;
