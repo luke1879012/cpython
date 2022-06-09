@@ -383,33 +383,50 @@ builtin_all(PyObject *module, PyObject *iterable)
     PyObject *(*iternext)(PyObject *);
     int cmp;
 
+    // 获取可迭代对象的迭代器
     it = PyObject_GetIter(iterable);
     if (it == NULL)
         return NULL;
+    // 拿到内部的 __next__ 方法
     iternext = *Py_TYPE(it)->tp_iternext;
 
     for (;;) {
+        // 迭代元素
         item = iternext(it);
+        // 返回 NULL，说明出现异常了
+        // 一种是迭代完毕抛出的 StopIteration
+        // 另一种是迭代过程中出现的异常
         if (item == NULL)
             break;
+        // 判断 item 的布尔值是否为真
+        // cmp > 0  表示为真
+        // cmp == 0 表示为假
+        // cmp < 0  表示解释器调用出错（极少发生）
         cmp = PyObject_IsTrue(item);
         Py_DECREF(item);
         if (cmp < 0) {
             Py_DECREF(it);
             return NULL;
         }
+        // 只要有一个元素为假，就返回False
         if (cmp == 0) {
             Py_DECREF(it);
             Py_RETURN_FALSE;
         }
     }
     Py_DECREF(it);
+    // PyErr_Occurred() 为真表示出现异常了
     if (PyErr_Occurred()) {
+        // 判断异常是不是StopIteration
         if (PyErr_ExceptionMatches(PyExc_StopIteration))
+            // 如果是，那么表示迭代正常结束
+            // PyErr_Clear() 负责将异常清空
             PyErr_Clear();
         else
             return NULL;
     }
+    // 走到这，说明所有的元素全部为真
+    // 返回 True，等价于 return Py_True
     Py_RETURN_TRUE;
 }
 
@@ -428,16 +445,20 @@ static PyObject *
 builtin_any(PyObject *module, PyObject *iterable)
 /*[clinic end generated code: output=fa65684748caa60e input=41d7451c23384f24]*/
 {
+    // 源码和 builtin_all 是类似的
     PyObject *it, *item;
     PyObject *(*iternext)(PyObject *);
     int cmp;
 
+    // 获取可迭代对象的迭代器
     it = PyObject_GetIter(iterable);
     if (it == NULL)
         return NULL;
+    // 拿到内部的 __next__ 方法
     iternext = *Py_TYPE(it)->tp_iternext;
 
     for (;;) {
+        // 迭代元素
         item = iternext(it);
         if (item == NULL)
             break;
@@ -447,6 +468,7 @@ builtin_any(PyObject *module, PyObject *iterable)
             Py_DECREF(it);
             return NULL;
         }
+        // 只要有一个为真，则返回True
         if (cmp > 0) {
             Py_DECREF(it);
             Py_RETURN_TRUE;
@@ -459,6 +481,7 @@ builtin_any(PyObject *module, PyObject *iterable)
         else
             return NULL;
     }
+    // 全部为假，则返回False
     Py_RETURN_FALSE;
 }
 
