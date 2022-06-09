@@ -1556,6 +1556,7 @@ builtin_hash(PyObject *module, PyObject *obj)
 {
     Py_hash_t x;
 
+    // 在内部会调用 obj->ob_type->tp_hash(obj)
     x = PyObject_Hash(obj);
     if (x == -1)
         return NULL;
