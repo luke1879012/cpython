@@ -1266,9 +1266,14 @@ builtin_id(PyModuleDef *self, PyObject *v)
 
 /* map object ************************************************************/
 
+// map的结构体
 typedef struct {
+    // 头部信息
     PyObject_HEAD
+    // 一个指向 PyTupleObject 的指针。
+    // 以 map(lambda x: x + 1, [1, 2, 3]) 为例，那么这里的 iters 就相当于是 ([1, 2, 3].__iter__(),)
     PyObject *iters;
+    // 函数的指针
     PyObject *func;
 } mapobject;
 
@@ -1279,41 +1284,67 @@ map_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     mapobject *lz;
     Py_ssize_t numargs, i;
 
+    // map对象在底层对应的是 mapobject
+    // map类本身在底层对应的则是 PyMap_Type
+    // _PyArg_NoKeywords表示检验是否 没有传递关键字参数
     if (type == &PyMap_Type && !_PyArg_NoKeywords("map", kwds))
+        // 可以看到map不接受关键字参数
+        // 如果传递了，那么会报如下错误:
+        // TypeError: map() takes no keyword arguments
         return NULL;
 
+    // 位置参数都在args里面，上面的kwds是关键字参数
+    // 这里获取位置参数的个数，1个函数、numargs-1个可迭代对象
+    // 而args是一个PyTupleObject *
     numargs = PyTuple_Size(args);
     if (numargs < 2) {
+        // 抛出 TypeError，表示map至少接受两个位置参数
+        // 一个函数和至少一个可迭代对象
         PyErr_SetString(PyExc_TypeError,
            "map() must have at least two arguments.");
         return NULL;
     }
 
+    // 申请一个元组，容量为numargs-1
+    // 用于存放传递的所有可迭代对象对应的迭代器
     iters = PyTuple_New(numargs-1);
     if (iters == NULL)
         return NULL;
 
+    // 依次循环
     for (i=1 ; i<numargs ; i++) {
+        // 表示获取索引为i的可迭代对象
+        // 然后拿到对应的迭代器
         /* Get iterator. */
         it = PyObject_GetIter(PyTuple_GET_ITEM(args, i));
+        // 为NULL表示获取失败
+        // 但是iters这个元组已经申请了，所以减少其引用计数，将其销毁
         if (it == NULL) {
             Py_DECREF(iters);
             return NULL;
         }
+        // 将对应的迭代器设置在元组iters中
         PyTuple_SET_ITEM(iters, i-1, it);
     }
 
+    // 调用PyMap_Type的tp_alloc，为其实例对象申请空间
     /* create mapobject structure */
     lz = (mapobject *)type->tp_alloc(type, 0);
+    // 失败，减少iters的引用计数
     if (lz == NULL) {
         Py_DECREF(iters);
         return NULL;
     }
+    // 让 lz 的iters字段 等于iters
     lz->iters = iters;
+    // 获取第一个参数，也就是函数
     func = PyTuple_GET_ITEM(args, 0);
+    // 增加引用计数，因为该函数作为参数传递给map了
     Py_INCREF(func);
+    // 让 lz 的func字段等于func
     lz->func = func;
 
+    // 转成PyObject *泛型指针，然后返回
     return (PyObject *)lz;
 }
 
@@ -1337,43 +1368,83 @@ map_traverse(mapobject *lz, visitproc visit, void *arg)
 static PyObject *
 map_next(mapobject *lz)
 {
+    // small_stack是一个C的栈数组，里面存放 PyObject*
+    // 显然它用来存放map中所有可迭代对象迭代出来的元素
+    // 而这个_PY_FASTCALL_SMALL_STACK是一个宏
+    // 定义在 Include/cpython/abstract.h 中，值为5
+    // 如果函数参数的个数小于等于5的话，便可申请在栈中
+    // 之所以将其设置成5，是为了不滥用C的栈，从而减少栈溢出的风险
     PyObject *small_stack[_PY_FASTCALL_SMALL_STACK];
+    // 二级指针，指向samll_stack数组的手元素，所以是PyObject **
     PyObject **stack;
     Py_ssize_t niters, nargs, i;
+    // 函数调用的返回值
     PyObject *result = NULL;
 
+    // 获取iters的长度，也就是迭代器的数量
+    // 当然同时也是调用函数时的参数数量
     niters = PyTuple_GET_SIZE(lz->iters);
+    // 如果小于等于5，那么获取这些迭代器中的元素之后
+    // 直接使用在 C 栈里面申请的数组进行存储
     if (niters <= (Py_ssize_t)Py_ARRAY_LENGTH(small_stack)) {
         stack = small_stack;
     }
     else {
+        // 如果超过了5，那么不好意思，只能在堆里面重新申请了
         stack = PyMem_Malloc(niters * sizeof(stack[0]));
+        // 返回NUL，表示申请失败，说明没有内存了
         if (stack == NULL) {
             PyErr_NoMemory();
             return NULL;
         }
     }
 
+    // 走到这里说明一切顺利，那么下面就开始迭代了
     nargs = 0;
+    // 一次遍历，得到每一个迭代器
     for (i=0; i < niters; i++) {
+        // 获取索引为i 对应的迭代器
         PyObject *it = PyTuple_GET_ITEM(lz->iters, i);
+        // 拿到 __next__，进行调用
         PyObject *val = Py_TYPE(it)->tp_iternext(it);
+        // 如果 val 为 NULL，说明有一个迭代器迭代结果了，或者出错了
         if (val == NULL) {
             goto exit;
         }
+        // 将 val 设置在数组索引为i的位置，然后进行下一轮循环
+        // 也就是获取下一个迭代器中的元素
         stack[i] = val;
+        // nargs++，和参数个数（迭代器个数）保持一致
+        // 如果可迭代对象个数小于5，那么stack会申请在栈区
+        // 但是在栈区申请的话，长度默认为5，因此后两个是元素时无效的
+        // 而在调用的时候需要指定有效的参数个数
         nargs++;
     }
 
+    /*
+        以 map(func, [1, 2, 3], ["xx", "yy", "zz"], [11, 22, 33]) 为例
+        那么 lz -> iters 就是 ([1, 2, 3].__iter__(), 
+                               ["xx", "yy", "zz"].__iter__(),
+                               [11, 22, 33].__iter__())
+        第一次迭代，for 循环结束时，stack 指向数组 [1, "xx", 11]
+        第二次迭代，for 循环结束时，stack 指向数组 [2, "yy", 22]
+        第三次迭代，for 循环结束时，stack 指向数组 [3, "zz", 33]
+    */
+    // 进行调用，tstate 是线程状态对象
+    // lz -> func 就是函数，stack 指向函数的首个参数
+    // nargs 就是参数个数
     result = _PyObject_FastCall(lz->func, stack, nargs);
 
 exit:
+    // 调用完毕之后，将stack里面指针指向的对象的引用计数减1
     for (i=0; i < nargs; i++) {
         Py_DECREF(stack[i]);
     }
+    // 不相等的话，说明该stack是在堆区申请的，要释放
     if (stack != small_stack) {
         PyMem_Free(stack);
     }
+    // 返回result
     return result;
 }
 
