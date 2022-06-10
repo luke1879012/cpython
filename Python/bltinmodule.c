@@ -575,6 +575,7 @@ whatever arguments are passed.\n\
 \n\
 By default, this drops you into the pdb debugger.");
 
+// filter 的结构体
 typedef struct {
     PyObject_HEAD
     PyObject *func;
@@ -584,31 +585,41 @@ typedef struct {
 static PyObject *
 filter_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+    // 函数、可迭代对象
     PyObject *func, *seq;
+    // 可迭代对象的迭代器
     PyObject *it;
+    // 返回值，filter对象（指针）
     filterobject *lz;
 
+    // filter也不接收关键字参数
     if (type == &PyFilter_Type && !_PyArg_NoKeywords("filter", kwds))
         return NULL;
 
+    // 只接受两个参数
     if (!PyArg_UnpackTuple(args, "filter", 2, 2, &func, &seq))
         return NULL;
 
+    // 获取seq对应的迭代器
     /* Get iterator. */
     it = PyObject_GetIter(seq);
     if (it == NULL)
         return NULL;
 
+    // 为filter对象申请空间
     /* create filterobject structure */
     lz = (filterobject *)type->tp_alloc(type, 0);
     if (lz == NULL) {
         Py_DECREF(it);
         return NULL;
     }
+    // 增加函数的引用计数
     Py_INCREF(func);
+    // 初始化成员
     lz->func = func;
     lz->it = it;
 
+    // 返回
     return (PyObject *)lz;
 }
 
@@ -632,35 +643,61 @@ filter_traverse(filterobject *lz, visitproc visit, void *arg)
 static PyObject *
 filter_next(filterobject *lz)
 {
+    // 迭代器中迭代出来的每一个元素
     PyObject *item;
+    // 获取迭代器
     PyObject *it = lz->it;
+    // 是否为真，1表示真，0表示假
     long ok;
+    // 指针，用于保存 __next__
     PyObject *(*iternext)(PyObject *);
+    // 如果 func==None 或者 func==bool，那么checktrue为真
     int checktrue = lz->func == Py_None || lz->func == (PyObject *)&PyBool_Type;
 
+    // 迭代器的 __next__ 方法
     iternext = *Py_TYPE(it)->tp_iternext;
+    // 无限循环
     for (;;) {
+        // 迭代器所迭代出来的元素
         item = iternext(it);
         if (item == NULL)
             return NULL;
 
+        // 如果checktrue，后者说如果func==None || func==bool
         if (checktrue) {
+            // 那么直接走PyObject_IsTrue，判断item是否为真
+            // 另外我们在写if语句的时候经常会写 if item:这种形式
+            // 但是很多会写 if bool(item):
+            // 因为这两者底层都是执行了 PyObject_IsTrue
+            // 但是对于if而言，bool(item)多了一次调用，速度稍微慢一些
             ok = PyObject_IsTrue(item);
         } else {
+            // 否则的话，会调用我们传递的func
+            // 这里的 good 就是函数调用的返回值
             PyObject *good;
+            // 调用函数，将返回值赋值给good
             good = PyObject_CallFunctionObjArgs(lz->func, item, NULL);
             if (good == NULL) {
                 Py_DECREF(item);
                 return NULL;
             }
+            // 判断 good 是否为真
             ok = PyObject_IsTrue(good);
+            // 减少其引用计数，因为它不被外界所使用
             Py_DECREF(good);
         }
+        // 如果ok大于0，说明将lz->func(item)的结果为真
+        // 那么将item返回
         if (ok > 0)
             return item;
+        // 同时减少其引用计数
         Py_DECREF(item);
+        // 小于0的话，表示PyObject_IsTrue调用失败了，返回-1
+        // 但我们使用Python时不会发生，除非解释器本身出bug了
         if (ok < 0)
             return NULL;
+        // 否则说明 ok 等于 0 ，item为假
+        // 那么进行下一轮循环，直到找到一个为真的元素
     }
 }
 
