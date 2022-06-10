@@ -2725,6 +2725,7 @@ builtin_issubclass_impl(PyObject *module, PyObject *cls,
 }
 
 
+// zip 的结构体
 typedef struct {
     PyObject_HEAD
     Py_ssize_t          tuplesize;
@@ -2735,46 +2736,69 @@ typedef struct {
 static PyObject *
 zip_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+    // zip 对象的指针
     zipobject *lz;
+    // 循环变量
     Py_ssize_t i;
+    // 所有可迭代对象的迭代器组成的元组
     PyObject *ittuple;  /* tuple of iterators */
+    // "代码中有体现"
     PyObject *result;
+    // 可迭代对象的数量
     Py_ssize_t tuplesize;
 
+    // zip同样不需要关键字参数
+    // 但是在3.10的时候会提供一个关键字参数strict
+    // 如果为True，表示可迭代对象之间的长度必须相等，否则报错
+    // strict 如果为False，则和目前是等价的，会自动以短的为准
     if (type == &PyZip_Type && !_PyArg_NoKeywords("zip", kwds))
         return NULL;
 
     /* args must be a tuple */
     assert(PyTuple_Check(args));
+    // 获取可迭代对象的数量
     tuplesize = PyTuple_GET_SIZE(args);
 
+    // 申请一个元组，长度为tuplesize
+    // 用于存放可迭代对象对应的迭代器
     /* obtain iterators */
     ittuple = PyTuple_New(tuplesize);
+    // 为NULL表示申请失败
     if (ittuple == NULL)
         return NULL;
+    // 然后依次遍历
     for (i=0; i < tuplesize; ++i) {
+        // 获取传递的可迭代对象
         PyObject *item = PyTuple_GET_ITEM(args, i);
+        // 通过PyObject_GetIter获取对应的迭代器
         PyObject *it = PyObject_GetIter(item);
         if (it == NULL) {
+            // 为NULL表示获取失败，减少ittuple的引用计数，返回NULL
             Py_DECREF(ittuple);
             return NULL;
         }
+        // 设置在itetuple中
         PyTuple_SET_ITEM(ittuple, i, it);
     }
 
+    // 这里又申请一个元组result，长度也为tuplesize
     /* create a result holder */
     result = PyTuple_New(tuplesize);
     if (result == NULL) {
         Py_DECREF(ittuple);
         return NULL;
     }
+    // 然后将内部的所有元素都设置为None
+    // Py_None就是Python中的None
     for (i=0 ; i < tuplesize ; i++) {
         Py_INCREF(Py_None);
         PyTuple_SET_ITEM(result, i, Py_None);
     }
 
+    // 申请一个zip对象
     /* create zipobject structure */
     lz = (zipobject *)type->tp_alloc(type, 0);
+    // 申请失败减少引用计数，返回NULL
     if (lz == NULL) {
         Py_DECREF(ittuple);
         Py_DECREF(result);
@@ -2807,24 +2831,41 @@ zip_traverse(zipobject *lz, visitproc visit, void *arg)
 static PyObject *
 zip_next(zipobject *lz)
 {
+    // 循环变量
     Py_ssize_t i;
+    // 可迭代对象的数量，或者说迭代器的数量
     Py_ssize_t tuplesize = lz->tuplesize;
+    // (None, None ,...)
     PyObject *result = lz->result;
+    // 每一个迭代器
     PyObject *it;
+    // 代码中体现
     PyObject *item;
     PyObject *olditem;
 
+    // tuplesize == 0, 直接返回
     if (tuplesize == 0)
         return NULL;
+    // 如果result的引用计数为1
+    // 证明该元组的空间都被申请了
     if (Py_REFCNT(result) == 1) {
+        // 要作为返回值返回，所以引用计数加1
         Py_INCREF(result);
+        // 遍历
         for (i=0 ; i < tuplesize ; i++) {
+            // 依次获取每一个迭代器
             it = PyTuple_GET_ITEM(lz->ittuple, i);
+            // 迭代出相应的元素
             item = (*Py_TYPE(it)->tp_iternext)(it);
+            // 如果出现了NULL，证明迭代器结束了，会直接停止
+            // 所以会以元素最少的可迭代对象（迭代器）为准
             if (item == NULL) {
                 Py_DECREF(result);
                 return NULL;
             }
+            // 设置在result里面
+            // 但是要先获取result中原来的元素，并将其引用计数减1
+            // 因为元组不再持有对它的引用
             olditem = PyTuple_GET_ITEM(result, i);
             PyTuple_SET_ITEM(result, i, item);
             Py_DECREF(olditem);
@@ -2835,9 +2876,11 @@ zip_next(zipobject *lz)
             _PyObject_GC_TRACK(result);
         }
     } else {
+        // 否则的话同样的逻辑，只不过需要自己重新手动申请一个tuple
         result = PyTuple_New(tuplesize);
         if (result == NULL)
             return NULL;
+        // 然后下面的逻辑是类似的
         for (i=0 ; i < tuplesize ; i++) {
             it = PyTuple_GET_ITEM(lz->ittuple, i);
             item = (*Py_TYPE(it)->tp_iternext)(it);
@@ -2848,6 +2891,7 @@ zip_next(zipobject *lz)
             PyTuple_SET_ITEM(result, i, item);
         }
     }
+    // 返回元组result
     return result;
 }
 
