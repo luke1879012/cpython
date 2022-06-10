@@ -904,19 +904,28 @@ _PyCoro_GetAwaitableIter(PyObject *o)
     unaryfunc getter = NULL;
     PyTypeObject *ot;
 
+    // 如果是一个使用 async def 定义的协程
+    // 或者说是一个被 @asynico.coroutine 装饰的协程（不推荐）
+    // 那么直接返回
     if (PyCoro_CheckExact(o) || gen_is_coroutine(o)) {
         /* 'o' is a coroutine. */
         Py_INCREF(o);
         return o;
     }
 
+    // 如果不是一个协程，那么它必须实现 __await__
+    // 对应 tp_as_async 的 am_await 成员
     ot = Py_TYPE(o);
     if (ot->tp_as_async != NULL) {
         getter = ot->tp_as_async->am_await;
     }
+    // 如果实现了 __await__
     if (getter != NULL) {
+        // 那么进行调用
         PyObject *res = (*getter)(o);
         if (res != NULL) {
+            // 如果一个对选哪个不是协程，但又实现了 __await__
+            // 那么 __await__ 必须返回迭代器
             if (PyCoro_CheckExact(res) || gen_is_coroutine(res)) {
                 /* __await__ must return an *iterator*, not
                    a coroutine or another awaitable (see PEP 492) */
@@ -934,6 +943,7 @@ _PyCoro_GetAwaitableIter(PyObject *o)
         return res;
     }
 
+    // 否则就说明，该对象不可以被await
     PyErr_Format(PyExc_TypeError,
                  "object %.100s can't be used in 'await' expression",
                  ot->tp_name);

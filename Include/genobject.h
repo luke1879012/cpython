@@ -64,6 +64,7 @@ PyObject *_PyGen_yf(PyGenObject *);
 PyAPI_FUNC(void) _PyGen_Finalize(PyObject *self);
 
 #ifndef Py_LIMITED_API
+// 协程的结构体
 typedef struct {
     _PyGenObject_HEAD(cr)
     PyObject *cr_origin;

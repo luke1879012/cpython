@@ -58,6 +58,7 @@ typedef enum {
     STATE_FINISHED
 } fut_state;
 
+// Task和Future的定义
 #define FutureObj_HEAD(prefix)                                              \
     PyObject_HEAD                                                           \
     PyObject *prefix##_loop;                                                \

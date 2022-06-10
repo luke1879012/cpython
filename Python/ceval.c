@@ -2038,7 +2038,9 @@ main_loop:
 
         case TARGET(GET_AWAITABLE): {
             PREDICTED(GET_AWAITABLE);
+            // 将协程压入到栈顶，也就是这里的iterable
             PyObject *iterable = TOP();
+            // 调用协程 __await__
             PyObject *iter = _PyCoro_GetAwaitableIter(iterable);
 
             if (iter == NULL) {
@@ -2062,6 +2064,7 @@ main_loop:
                 }
             }
 
+            // 将 iter 设置为新的栈顶元素
             SET_TOP(iter); /* Even if it's NULL */
 
             if (iter == NULL) {
