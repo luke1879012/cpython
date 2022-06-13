@@ -50,6 +50,8 @@ extern "C" {
 */
 
 // python 第一层内存管理
+// 第二层是一组以 PyObject_* 为前缀的函数簇
+// 第三层是各种缓存机制
 PyAPI_FUNC(void *) PyMem_Malloc(size_t size);
 PyAPI_FUNC(void *) PyMem_Realloc(void *ptr, size_t new_size);
 PyAPI_FUNC(void) PyMem_Free(void *ptr);
