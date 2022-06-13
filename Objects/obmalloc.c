@@ -851,6 +851,7 @@ static int running_on_valgrind = -1;
 #define ALIGNMENT_SHIFT         3
 #endif
 
+// 64种block种类
 /* Return the number of bytes in size class I, as a uint. */
 #define INDEX2SIZE(I) (((uint)(I) + 1) << ALIGNMENT_SHIFT)
 
@@ -882,6 +883,7 @@ static int running_on_valgrind = -1;
  * violation fault.  4K is apparently OK for all the platforms that python
  * currently targets.
  */
+// pool的大小通常为一个系统内存页
 #define SYSTEM_PAGE_SIZE        (4 * 1024)
 #define SYSTEM_PAGE_SIZE_MASK   (SYSTEM_PAGE_SIZE - 1)
 
@@ -936,14 +938,27 @@ typedef uint8_t block;
 
 /* Pool for small blocks. */
 struct pool_header {
+    // 当前pool里面已经分配出去的block的数量
     union { block *_padding;
             uint count; } ref;          /* number of allocated blocks    */
+    // 指向第一块可用的block
+    // 解决大量离散可用block问题
     block *freeblock;                   /* pool's free list head         */
+    // 底层会有很多pool
+    // 多个pool之间也会形成一个链表
+    // 所以nextpool指向下一个pool
     struct pool_header *nextpool;       /* next pool of this size class  */
+    // prevpool指向上一个pool
     struct pool_header *prevpool;       /* previous pool       ""        */
+    // 在arena里面的索引
     uint arenaindex;                    /* index into arenas of base adr */
+    // 每个pool都维护了一组相同规格的block
+    // 而szindex值得就是block的size class idx
+    // 如果是2，那么管理的每个block的大小就是24（从0开始，3*8=24）
     uint szidx;                         /* block size class index        */
+    // 下一个可用block的内存偏移量
     uint nextoffset;                    /* bytes to virgin block         */
+    // 最后一个block的内存偏移量
     uint maxnextoffset;                 /* largest valid nextoffset      */
 };
 
@@ -994,6 +1009,7 @@ struct arena_object {
 
 #define DUMMY_SIZE_IDX          0xffff  /* size class of newly cached pools */
 
+// 基于地址P获得离P最近的pool的边界地址
 /* Round pointer P down to the closest pool-aligned address <= P, as a poolp */
 #define POOL_ADDR(P) ((poolp)_Py_ALIGN_DOWN((P), POOL_SIZE))
 
@@ -1451,26 +1467,54 @@ pymalloc_alloc(void *ctx, size_t nbytes)
      */
     size = (uint)(nbytes - 1) >> ALIGNMENT_SHIFT;
     pool = usedpools[size + size];
+    // 再申请一块block
     if (pool != pool->nextpool) {
         /*
          * There is a used pool for this size class.
          * Pick up the head block of its free list.
          */
+        // 首先pool中已分配的block数自增1
         ++pool->ref.count;
+        // freeblock指向的是第一块可用的block
         bp = pool->freeblock;
         assert(bp != NULL);
+        // 如果这里的条件不为真
+        // 表明离散可用block链表中已经不存在可用的block了
         if ((pool->freeblock = *(block **)bp) != NULL) {
             goto success;
         }
 
+        // 可以看到，从pool里面申请新的block之前
+        // 会先检测离散可用block链表中是否存在可用的block
+
+        // 由于freeblock本身就指向可用的block
+        // 因此当再次申请16字节的block时，返回freeblock即可
+        // 那么很显然，freeblock还需要前进，指向下一块可用的block
+        // 分配之前，第一块可用block是第二块block，被freeblock指向
+        // 分配之后，第二块block就不可用了
+        // 所以freeblock要指向第三块block(作为新的第一块可用block)
+        // 那么怎么才能获取下一块可用的block呢？
         /*
          * Reached the end of the free list, try to extend it.
          */
         if (pool->nextoffset <= pool->maxnextoffset) {
+            // 显然要依赖于nextoffset
+            // 它保存的正是下一块可用block的偏移量(分配前的第三块)\
+            // 由于这个偏移量是相对pool而言的
+            // 所以pool+nextoffset就是下一块可用block的偏移量了
+            // 将它赋值给freeblock即可
             /* There is room for another block. */
             pool->freeblock = (block*)pool +
                               pool->nextoffset;
+            // 同理，nextoffset也要向前移动一个block的距离
+            // 因为分配之后，第三块block称为了第一块可用block
+            // 那么下一个可用block就应该是第四块block
             pool->nextoffset += INDEX2SIZE(size);
+            // 依次反复，即可对所有的block进行遍历
+            // 而maxnextoffset指明了该pool中最后一个可用block的偏移量
+            // 当pool->nextoffset > pool->maxnextoffset
+            // 也就是上面的if条件不满足时，就说明遍历完pool中所有的block了
+            // 再次获取显然就是NULL了
             *(block **)(pool->freeblock) = NULL;
             goto success;
         }
@@ -1550,13 +1594,16 @@ pymalloc_alloc(void *ctx, size_t nbytes)
                        ARENA_SIZE - POOL_SIZE);
         }
 
+    //pool指向了一块4KB的内存
     init_pool:
+        // 以 16 字节(szidx=1) 的 block 为例
         /* Frontlink to used pools. */
         next = usedpools[size + size]; /* == prev */
         pool->nextpool = next;
         pool->prevpool = next;
         next->nextpool = pool;
         next->prevpool = pool;
+        // 说明第0块不能用
         pool->ref.count = 1;
         if (pool->szidx == size) {
             /* Luckily, this pool last contained blocks
@@ -1573,9 +1620,16 @@ pymalloc_alloc(void *ctx, size_t nbytes)
          * contain just the second block, and return the first
          * block.
          */
+        // 设置pool的size class index
         pool->szidx = size;
+        // 一个宏，将szidx转成内存块的大小
+        // 比如: 0->8, 1->16, 63->512 (计算公式:(n+1)*8)
         size = INDEX2SIZE(size);
+        // 跳过用于pool_header的内存，并进行对齐
+        // POOL_OVERHEAD就是pool结构体的大小，48字节
+        // 此时的bp指向第一块 block
         bp = (block *)pool + POOL_OVERHEAD;
+        // 等价于pool->nextoffset = POOL_OVERHEAD + size*2
         pool->nextoffset = POOL_OVERHEAD + (size << 1);
         pool->maxnextoffset = POOL_SIZE - size;
         pool->freeblock = bp + size;
@@ -1676,11 +1730,13 @@ pymalloc_free(void *ctx, void *p)
 #endif
 
     pool = POOL_ADDR(p);
+    // 如果p不再pool里面，直接返回0
     if (!address_in_range(p, pool)) {
         return 0;
     }
     /* We allocated this address. */
 
+    // 释放，那么ref.count就势必大于0
     /* Link p to the start of the pool's freeblock list.  Since
      * the pool had at least the p block outstanding, the pool
      * wasn't empty (so it's already in a usedpools[] list, or
