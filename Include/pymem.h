@@ -49,6 +49,7 @@ extern "C" {
    performed on failure (no exception is set, no warning is printed, etc).
 */
 
+// python 第一层内存管理
 PyAPI_FUNC(void *) PyMem_Malloc(size_t size);
 PyAPI_FUNC(void *) PyMem_Realloc(void *ptr, size_t new_size);
 PyAPI_FUNC(void) PyMem_Free(void *ptr);
@@ -75,6 +76,8 @@ PyAPI_FUNC(void) PyMem_Free(void *ptr);
  * overflow checking is always done.
  */
 
+// 面向对象中类型的内存分配器
+// 只需要提供类型和数量，Python会自动侦测其所需的内存空间大小
 #define PyMem_New(type, n) \
   ( ((size_t)(n) > PY_SSIZE_T_MAX / sizeof(type)) ? NULL :      \
         ( (type *) PyMem_Malloc((n) * sizeof(type)) ) )

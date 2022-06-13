@@ -596,9 +596,11 @@ void PyMem_RawFree(void *ptr)
 }
 
 
+// python 第一层内存管理(跳转过来的)
 void *
 PyMem_Malloc(size_t size)
 {
+    // 需要自行提供申请的空间大小
     /* see PyMem_RawMalloc() */
     if (size > (size_t)PY_SSIZE_T_MAX)
         return NULL;
