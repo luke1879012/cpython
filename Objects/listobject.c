@@ -194,6 +194,8 @@ PyList_New(Py_ssize_t size)
     }
     Py_SIZE(op) = size;
     op->allocated = size;
+    // 创建PyListObject对象
+    // 并在设置完属性之后，返回之前执行了_PyObject_GC_TRACK
     _PyObject_GC_TRACK(op);
     return (PyObject *) op;
 }

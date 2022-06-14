@@ -44,6 +44,8 @@ static inline void _PyObject_GC_TRACK_impl(const char *filename, int lineno,
     _PyRuntime.gc.generation0->_gc_prev = (uintptr_t)gc;
 }
 
+// 开启GC跟踪
+// 将所创建的container对象链接到Python的可收集对象链表中
 #define _PyObject_GC_TRACK(op) \
     _PyObject_GC_TRACK_impl(__FILE__, __LINE__, _PyObject_CAST(op))
 

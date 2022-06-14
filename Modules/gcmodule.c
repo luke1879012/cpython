@@ -63,9 +63,11 @@ module gc
 // most gc_list_* functions for it.
 #define NEXT_MASK_UNREACHABLE  (1)
 
+// 根据PyObject得到PyGC_Head
 /* Get an object's GC head */
 #define AS_GC(o) ((PyGC_Head *)(o)-1)
 
+// 根据PyGC_Head得到PyObject
 /* Get the object given the GC head */
 #define FROM_GC(g) ((PyObject *)(((PyGC_Head *)g)+1))
 
@@ -130,9 +132,11 @@ _PyGC_Initialize(struct _gc_runtime_state *state)
 {
     state->enabled = 1; /* automatic collection enabled? */
 
+// 三个 gc_generation 结构体实例
 #define _GEN_HEAD(n) GEN_HEAD(state, n)
     struct gc_generation generations[NUM_GENERATIONS] = {
         /* PyGC_Head,                                    threshold,    count */
+        // 零代链表，threshold字段表示最多可以容纳多少个新创建的container对象
         {{(uintptr_t)_GEN_HEAD(0), (uintptr_t)_GEN_HEAD(0)},   700,        0},
         {{(uintptr_t)_GEN_HEAD(1), (uintptr_t)_GEN_HEAD(1)},   10,         0},
         {{(uintptr_t)_GEN_HEAD(2), (uintptr_t)_GEN_HEAD(2)},   10,         0},
@@ -1007,9 +1011,13 @@ collect(struct _gc_runtime_state *state, int generation,
         Py_ssize_t *n_collected, Py_ssize_t *n_uncollectable, int nofail)
 {
     int i;
+    // 可达的对象个数
     Py_ssize_t m = 0; /* # objects collected */
+    // 不可达的对象个数
     Py_ssize_t n = 0; /* # unreachable objects that couldn't be collected */
+    // 正在检测的代
     PyGC_Head *young; /* the generation we are examining */
+    // 下一代
     PyGC_Head *old; /* next older generation */
     PyGC_Head unreachable; /* non-problematic unreachable trash */
     PyGC_Head finalizers;  /* objects with, & reachable from, __del__ */
@@ -1025,9 +1033,12 @@ collect(struct _gc_runtime_state *state, int generation,
     if (PyDTrace_GC_START_ENABLED())
         PyDTrace_GC_START(generation);
 
+    // 因为没有第三代链表，所以当清理的是零代或一代链表时
+    // 将下一代链表的count字段自增1
     /* update collection and allocation counters */
     if (generation+1 < NUM_GENERATIONS)
         state->generations[generation+1].count += 1;
+    // 同时将它前面的代的count字段清零
     for (i = 0; i <= generation; i++)
         state->generations[i].count = 0;
 
@@ -1064,6 +1075,7 @@ collect(struct _gc_runtime_state *state, int generation,
     validate_list(young, 0);
 
     untrack_tuples(young);
+    // 将可达的对象移入下一个代
     /* Move reachable objects to next generation. */
     if (young != old) {
         if (generation == NUM_GENERATIONS - 2) {
@@ -1079,6 +1091,7 @@ collect(struct _gc_runtime_state *state, int generation,
         state->long_lived_total = gc_list_size(young);
     }
 
+    // 所有不可达的对象都是垃圾，要被清理
     /* All objects in unreachable are trash, but objects reachable from
      * legacy finalizers (e.g. tp_del) can't safely be deleted.
      */
@@ -1181,6 +1194,7 @@ collect(struct _gc_runtime_state *state, int generation,
     }
 
     assert(!PyErr_Occurred());
+    // 返回 可达对象个数 + 不可达对象的个数
     return n+m;
 }
 
@@ -1251,6 +1265,7 @@ collect_generations(struct _gc_runtime_state *state)
      * generations younger than it will be collected. */
     Py_ssize_t n = 0;
     for (int i = NUM_GENERATIONS-1; i >= 0; i--) {
+        // 当count大于threshold的时候，触发垃圾回收
         if (state->generations[i].count > state->generations[i].threshold) {
             /* Avoid quadratic performance degradation in number
                of tracked objects. See comments at the beginning
@@ -1259,6 +1274,7 @@ collect_generations(struct _gc_runtime_state *state)
             if (i == NUM_GENERATIONS - 1
                 && state->long_lived_pending < state->long_lived_total / 4)
                 continue;
+            // 执行此函数对链表进行清理
             n = collect_with_callback(state, i);
             break;
         }
@@ -1968,7 +1984,9 @@ _PyObject_GC_Alloc(int use_calloc, size_t basicsize)
     size_t size;
     if (basicsize > PY_SSIZE_T_MAX - sizeof(PyGC_Head))
         return PyErr_NoMemory();
+    // 将对象和PyGC_Head所需内存加起来
     size = sizeof(PyGC_Head) + basicsize;
+    // 为对象本身和PyGC_Head申请内存
     if (use_calloc)
         g = (PyGC_Head *)PyObject_Calloc(1, size);
     else
@@ -1988,6 +2006,7 @@ _PyObject_GC_Alloc(int use_calloc, size_t basicsize)
         collect_generations(state);
         state->collecting = 0;
     }
+    // 根据PyGC_Head的地址得到PyObject的地址
     op = FROM_GC(g);
     return op;
 }
@@ -2007,6 +2026,8 @@ _PyObject_GC_Calloc(size_t basicsize)
 PyObject *
 _PyObject_GC_New(PyTypeObject *tp)
 {
+    // 对于container对象
+    // 会调用_PyObject_GC_New 申请内存，之前见过
     PyObject *op = _PyObject_GC_Malloc(_PyObject_SIZE(tp));
     if (op != NULL)
         op = PyObject_INIT(op, tp);

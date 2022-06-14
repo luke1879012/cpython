@@ -44,10 +44,12 @@ PyAPI_FUNC(Py_ssize_t) _PyGC_CollectIfEnabled(void);
 
 /* GC information is stored BEFORE the object structure. */
 typedef struct {
+    // 链表后继指针，指向后一个被跟踪的对象
     // Pointer to next object in the list.
     // 0 means the object is not tracked
     uintptr_t _gc_next;
 
+    // 链表前继指针，指向前一个被跟踪的对象
     // Pointer to previous object in the list.
     // Lowest two bits are used for flags documented later.
     uintptr_t _gc_prev;

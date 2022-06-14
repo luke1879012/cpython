@@ -14,6 +14,7 @@ extern "C" {
 
 /* GC runtime state */
 
+// 分代回收的链表个数
 /* If we change this, we need to change the default value in the
    signature of gc.collect. */
 #define NUM_GENERATIONS 3
@@ -96,6 +97,7 @@ extern "C" {
 
 struct gc_generation {
     PyGC_Head head;
+    // "代"不同，这两个字段的含义也不同
     int threshold; /* collection threshold */
     int count; /* count of allocations or collections of younger
                   generations */
