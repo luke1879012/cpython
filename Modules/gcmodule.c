@@ -274,6 +274,8 @@ gc_list_move(PyGC_Head *node, PyGC_Head *list)
 static void
 gc_list_merge(PyGC_Head *from, PyGC_Head *to)
 {
+    // 将零代链表（比它年轻的），整个链接到一代链表之后，这样的话在清理一代的时候也会清理零代
+    // 二代同理
     assert(from != to);
     if (!gc_list_is_empty(from)) {
         PyGC_Head *to_tail = GC_PREV(to);
@@ -351,6 +353,7 @@ static void
 update_refs(PyGC_Head *containers)
 {
     PyGC_Head *gc = GC_NEXT(containers);
+    // 将对象的引用计数拷贝给 gc_refs 字段
     for (; gc != containers; gc = GC_NEXT(gc)) {
         gc_reset_refs(gc, Py_REFCNT(FROM_GC(gc)));
         /* Python's cyclic gc should never see an incoming refcount
@@ -381,13 +384,16 @@ visit_decref(PyObject *op, void *parent)
 {
     _PyObject_ASSERT(_PyObject_CAST(parent), !_PyObject_IsFreed(op));
 
+    // PyObject_IS_GC判断op指向的对象是否可收集的(container对象)
     if (PyObject_IS_GC(op)) {
+        // 获取container对象PyGC_Head
         PyGC_Head *gc = AS_GC(op);
         /* We're only interested in gc_refs for objects in the
          * generation being collected, which can be recognized
          * because only they have positive gc_refs.
          */
         if (gc_is_collecting(gc)) {
+            // 减少引用计数
             gc_decref(gc);
         }
     }
@@ -399,13 +405,19 @@ visit_decref(PyObject *op, void *parent)
  * objects not in containers.  The ones with gc_refs > 0 are directly
  * reachable from outside containers, and so can't be collected.
  */
+// 接下来的动作就是将环引用摘除
 static void
 subtract_refs(PyGC_Head *containers)
 {
     traverseproc traverse;
     PyGC_Head *gc = GC_NEXT(containers);
+    // 遍历链表每一个对象
     for (; gc != containers; gc = GC_NEXT(gc)) {
+        // 遍历当前对象所引用的对象
+        // 调用 visit_decref 将它们的引用计数减一
         PyObject *op = FROM_GC(gc);
+        // 一般来说，tp_traverse的动作就是遍历container对象中的每一个引用，
+        // 然后对引用执行 visit_decref 操作，它以一个回调函数的形式传递到traverse操作中
         traverse = Py_TYPE(op)->tp_traverse;
         (void) traverse(FROM_GC(gc),
                        (visitproc)visit_decref,
@@ -424,12 +436,15 @@ visit_reachable(PyObject *op, PyGC_Head *reachable)
     PyGC_Head *gc = AS_GC(op);
     const Py_ssize_t gc_refs = gc_get_refs(gc);
 
+    // 忽略掉1代和2代，以及没有被gc跟踪的对象
     // Ignore untracked objects and objects in other generation.
     if (gc->_gc_next == 0 || !gc_is_collecting(gc)) {
         return 0;
     }
 
     if (gc->_gc_next & NEXT_MASK_UNREACHABLE) {
+        // 对于已经被挪到unreachable链表中的对象
+        // 将其再次移动到原来的链表
         /* This had gc_refs = 0 when move_unreachable got
          * to it, but turns out it's reachable after all.
          * Move it back to move_unreachable's 'young' list,
@@ -450,6 +465,7 @@ visit_reachable(PyObject *op, PyGC_Head *reachable)
         gc_set_refs(gc, 1);
     }
     else if (gc_refs == 0) {
+        // 对于还没有处理的对象，恢复其gc_refs
         /* This is in move_unreachable's 'young' list, but
          * the traversal hasn't yet gotten to it.  All
          * we need to do is tell move_unreachable that it's
@@ -479,6 +495,7 @@ visit_reachable(PyObject *op, PyGC_Head *reachable)
  * But _gc_next in unreachable list has NEXT_MASK_UNREACHABLE flag.
  * So we can not gc_list_* functions for unreachable until we remove the flag.
  */
+// 对原始链表的切分，一条为root，一条为unreachable
 static void
 move_unreachable(PyGC_Head *young, PyGC_Head *unreachable)
 {
@@ -495,7 +512,9 @@ move_unreachable(PyGC_Head *young, PyGC_Head *unreachable)
      * or to the right have been scanned yet.
      */
 
+    // 遍历链表中的每个对象
     while (gc != young) {
+        // 如果是root object
         if (gc_get_refs(gc)) {
             /* gc is definitely reachable from outside the
              * original 'young'.  Mark it as such, and traverse
@@ -507,8 +526,11 @@ move_unreachable(PyGC_Head *young, PyGC_Head *unreachable)
              */
             PyObject *op = FROM_GC(gc);
             traverseproc traverse = Py_TYPE(op)->tp_traverse;
+            // 将它标记为可达
             _PyObject_ASSERT_WITH_MSG(op, gc_get_refs(gc) > 0,
                                       "refcount is too small");
+            // 遍历被它引用的对象
+            // 调用visit_reachable将被引用的对象标记为可达
             // NOTE: visit_reachable may change gc->_gc_next when
             // young->_gc_prev == gc.  Don't do gc = GC_NEXT(gc) before!
             (void) traverse(op,
@@ -521,6 +543,7 @@ move_unreachable(PyGC_Head *young, PyGC_Head *unreachable)
             prev = gc;
         }
         else {
+            // 对于非root object，移到unreachable链表中
             /* This *may* be unreachable.  To make progress,
              * assume it is.  gc isn't directly reachable from
              * any object we've already traversed, but may be
@@ -926,6 +949,7 @@ check_garbage(PyGC_Head *collectable)
  * tricky business as the lists can be changing and we don't know which
  * objects may be freed.  It is possible I screwed something up here.
  */
+// 销毁unreachable链表中的垃圾对象
 static void
 delete_garbage(struct _gc_runtime_state *state,
                PyGC_Head *collectable, PyGC_Head *old)
@@ -947,6 +971,7 @@ delete_garbage(struct _gc_runtime_state *state,
         }
         else {
             inquiry clear;
+            // 调用container对象的类型对象中的tp_clear操作
             if ((clear = Py_TYPE(op)->tp_clear) != NULL) {
                 Py_INCREF(op);
                 (void) clear(op);

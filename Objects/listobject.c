@@ -362,9 +362,11 @@ static void
 list_dealloc(PyListObject *op)
 {
     Py_ssize_t i;
+    // 从可收集链表中移除
     PyObject_GC_UnTrack(op);
     Py_TRASHCAN_BEGIN(op, list_dealloc)
     if (op->ob_item != NULL) {
+        // 依次遍历，减少内部元素的引用计数
         /* Do it backwards, for Christian Tismer.
            There's a simple test case where somehow this reduces
            thrashing when a *very* large list is created and
@@ -373,8 +375,10 @@ list_dealloc(PyListObject *op)
         while (--i >= 0) {
             Py_XDECREF(op->ob_item[i]);
         }
+        // 释放内存
         PyMem_FREE(op->ob_item);
     }
+    // 缓冲池机制
     if (numfree < PyList_MAXFREELIST && PyList_CheckExact(op))
         free_list[numfree++] = op;
     else
@@ -612,12 +616,18 @@ _list_clear(PyListObject *a)
         /* Because XDECREF can recursively invoke operations on
            this list, we make it empty first. */
         i = Py_SIZE(a);
+        // 将ob_size调整为0
         Py_SIZE(a) = 0;
+        // ob_item是一个二级指针，本来指向一个数组的指针
+        // 现在指向为NULL
         a->ob_item = NULL;
+        // 容量也设置为0
         a->allocated = 0;
         while (--i >= 0) {
+            // 数组里面的元素也全部减少引用计数
             Py_XDECREF(item[i]);
         }
+        // 释放数组
         PyMem_FREE(item);
     }
     /* Never fails; the return value can be ignored.
@@ -2648,6 +2658,7 @@ list_traverse(PyListObject *o, visitproc visit, void *arg)
     Py_ssize_t i;
 
     for (i = Py_SIZE(o); --i >= 0; )
+        // 对列表中的每一个元素都进行回调
         Py_VISIT(o->ob_item[i]);
     return 0;
 }
