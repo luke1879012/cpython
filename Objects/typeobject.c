@@ -955,6 +955,11 @@ type_repr(PyTypeObject *type)
 static PyObject *
 type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
+    // 如果我们调用的是 float
+    // 那么显然这里的type就是&PyFloat_Type
+
+    // 这里是声明一个PyObject *
+    // 显然它是要返回的实例对象的指针
     PyObject *obj;
 
     // tp_new 负责创建实例，所以它不能为空
@@ -973,7 +978,9 @@ type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
 #endif
 
     // 调用tp_new 为实例申请内存
+    // 此时实例对象已经创建完毕，这里会返回其指针
     obj = type->tp_new(type, args, kwds);
+    // 类型检测，暂时不用管
     obj = _Py_CheckFunctionResult((PyObject*)type, obj, NULL);
     if (obj == NULL)
         return NULL;
@@ -982,6 +989,7 @@ type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
     // 那么显然是查看对象类型，执行完__new__之后直接返回
     /* Ugly exception: when the call was type(something),
        don't call tp_init on the result. */
+    /* 丑陋的异常: 当它调用type(something)时，不要对结果调用tp_init */
     if (type == &PyType_Type &&
         PyTuple_Check(args) && PyTuple_GET_SIZE(args) == 1 &&
         (kwds == NULL ||
@@ -993,15 +1001,21 @@ type_call(PyTypeObject *type, PyObject *args, PyObject *kwds)
     // 如果obj的类型不是对应的类、或者其子类，那么直接返回
     /* If the returned object is not an instance of type,
        it won't be initialized. */
+    /* 如果返回的对象不是 type 的实例，则不会对其进行初始化 */
     if (!PyType_IsSubtype(Py_TYPE(obj), type))
         return obj;
 
-    // 然后获取obj的类型
+    // 获取obj的类型
     type = Py_TYPE(obj);
-    // 如果内部存在__init__函数，那么执行
+    // 如果内部存在 tp_init 函数，那么执行
+    // tp_init 就是 __init__ 
     if (type->tp_init != NULL) {
+        // 将tp_new返回的对象作为self
+        // 和args, kwds组合起来，作为参数
+        // 执行tp_init
         int res = type->tp_init(obj, args, kwds);
         if (res < 0) {
+            // 执行失败，将引用计数减一，然后将obj设置为NULL
             assert(PyErr_Occurred());
             Py_DECREF(obj);
             obj = NULL;
