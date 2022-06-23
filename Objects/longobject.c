@@ -306,6 +306,7 @@ _PyLong_Copy(PyLongObject *src)
 
 /* Create a new int object from a C long int */
 
+// 通过C的long创建PyLongObject
 PyObject *
 PyLong_FromLong(long ival)
 {
@@ -2276,6 +2277,7 @@ long_from_binary_base(const char **str, int base, PyLongObject **res)
  *
  * If unsuccessful, NULL will be returned.
  */
+// 通过C的char *来创建PyLongObject
 PyObject *
 PyLong_FromString(const char *str, char **pend, int base)
 {

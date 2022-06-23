@@ -365,6 +365,9 @@ PyObject_CallFinalizerFromDealloc(PyObject *self)
 int
 PyObject_Print(PyObject *op, FILE *fp, int flags)
 {
+    // op: 泛型指针
+    // fp: 文件句柄，表示输出的位置, 默认是stdout
+    // flags: 以__str__打印还是__repr__打印
     int ret = 0;
     if (PyErr_CheckSignals())
         return -1;

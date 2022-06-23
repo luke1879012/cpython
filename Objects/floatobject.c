@@ -111,6 +111,7 @@ PyFloat_GetInfo(void)
     return floatinfo;
 }
 
+// 通过C的double创建PyFloatObject
 PyObject *
 PyFloat_FromDouble(double fval)
 {
