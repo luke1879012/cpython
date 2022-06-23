@@ -65,7 +65,9 @@ whose size is determined when the object is allocated.
 
 
 #ifdef Py_TRACE_REFS
+// 所有的对象都放入到这个双向链表中，用于跟踪所有活跃的堆对象
 /* Define pointers to support a doubly-linked list of all live heap objects. */
+/* 定义指针以支持所有活动堆对象的双向链表*/
 #define _PyObject_HEAD_EXTRA            \
     struct _object *_ob_next;           \
     struct _object *_ob_prev;
@@ -77,30 +79,46 @@ whose size is determined when the object is allocated.
 #define _PyObject_EXTRA_INIT
 #endif
 
+// 提供宏，方便定义
 /* PyObject_HEAD defines the initial segment of every PyObject. */
+/* PyObject_HEAD 定义每个PyObject的初始阶段(头部) */
 #define PyObject_HEAD                   PyObject ob_base;
 
+// 下面的1表示引用计数
 #define PyObject_HEAD_INIT(type)        \
     { _PyObject_EXTRA_INIT              \
     1, type },
 
+// size就是PyVarObject->ob_size
 #define PyVarObject_HEAD_INIT(type, size)       \
     { PyObject_HEAD_INIT(type) size },
 
+// 提供宏，方便定义
 /* PyObject_VAR_HEAD defines the initial segment of all variable-size
  * container objects.  These end with a declaration of an array with 1
  * element, but enough space is malloc'ed so that the array actually
  * has room for ob_size elements.  Note that ob_size is an element count,
  * not necessarily a byte count.
  */
+/* PyObject_VAR_HEAD 定义所有 可变大小容器对象 的初始阶段(头部)。
+ * 最后声明一个包含1个元素的数组, (最后声明一个二级指针，指向最终的数组)
+ * 但需要足够的空间，以便数组实际上有空间容纳ob_size大小的元素。
+ * 注意，ob_size是元素个数，不一定是字节数量
+ */
 #define PyObject_VAR_HEAD      PyVarObject ob_base;
 #define Py_INVALID_SIZE (Py_ssize_t)-1
 
+// 实现对象机制的基石, PyObject
 /* Nothing is actually declared to be a PyObject, but every pointer to
  * a Python object can be cast to a PyObject*.  This is inheritance built
  * by hand.  Similarly every pointer to a variable-size Python object can,
  * in addition, be cast to PyVarObject*.
  */
+/* 实际上，没有东西被声明为PyObject，但是，每个指向
+ * Python对象的指针都可以转换为PyObject*。 这是手动继承构建的
+ * 同样，每个指向可变大小的Python对象都可以，
+ * 此外，将强制转换为 PyVarObject*
+*/
 typedef struct _object {
     _PyObject_HEAD_EXTRA
     Py_ssize_t ob_refcnt;
@@ -110,8 +128,11 @@ typedef struct _object {
 /* Cast argument to PyObject* type. */
 #define _PyObject_CAST(op) ((PyObject*)(op))
 
+// 实现变长对象机制的基石, PyVarObject
 typedef struct {
     PyObject ob_base;
+    // len函数会直接访问这个变量
+    /* 可变部分的项目数量 */
     Py_ssize_t ob_size; /* Number of items in variable part */
 } PyVarObject;
 

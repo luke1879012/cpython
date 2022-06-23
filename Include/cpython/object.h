@@ -174,28 +174,41 @@ typedef struct {
  * backwards-compatibility */
 typedef Py_ssize_t printfunc;
 
+// 类型对象对应的结构体
 typedef struct _typeobject {
     PyObject_VAR_HEAD
+    // 类型的名称
+    /* 为了打印: 格式 "<module>.<name>" */
     const char *tp_name; /* For printing, in format "<module>.<name>" */
+    // 创建对应实例对象时，所需要的内存信息
+    /* 为了分配内存 */
     Py_ssize_t tp_basicsize, tp_itemsize; /* For allocation */
 
     /* Methods to implement standard operations */
+    /* 以下为实现标准操作的方法 */
 
+    // 实例对象执行析构函数所作的操作
     destructor tp_dealloc;
     Py_ssize_t tp_vectorcall_offset;
     getattrfunc tp_getattr;
     setattrfunc tp_setattr;
+    /* 从前被称为 tp_compare(Python 2) 或 tp_reserved (Python 3) */
     PyAsyncMethods *tp_as_async; /* formerly known as tp_compare (Python 2)
                                     or tp_reserved (Python 3) */
     reprfunc tp_repr;
 
     /* Method suites for standard classes */
+    /* 标准类的方法程序组 */
 
+    // 实例对象为数值时，所支持的操作（结构体指针）
     PyNumberMethods *tp_as_number;
+    // 实例对象需序列时，所支持的操作（结构体指针）
     PySequenceMethods *tp_as_sequence;
+    // 实例对象为映射时，所支持的操作（结构体指针）
     PyMappingMethods *tp_as_mapping;
 
     /* More standard operations (here for binary compatibility) */
+    /* 更多标准的操作 (这里是为了二进制兼容性) */
 
     hashfunc tp_hash;
     ternaryfunc tp_call;
@@ -204,35 +217,47 @@ typedef struct _typeobject {
     setattrofunc tp_setattro;
 
     /* Functions to access object as input/output buffer */
+    /* 函数访问对象作为输入/输出缓冲区 */
     PyBufferProcs *tp_as_buffer;
 
     /* Flags to define presence of optional/expanded features */
+    /* 定义 可选/扩展 特性存在的标志 */
     unsigned long tp_flags;
 
+    /* 文档字符串 */
     const char *tp_doc; /* Documentation string */
 
     /* Assigned meaning in release 2.0 */
+    /* 在版本2.0中指定的含义 */
     /* call function for all accessible objects */
+    /* 调用所有可访问对象的函数 */
     traverseproc tp_traverse;
 
     /* delete references to contained objects */
+    /* 删除对所包含对象的引用 */
     inquiry tp_clear;
 
     /* Assigned meaning in release 2.1 */
+    /* 在版本2.0中指定的含义 */
     /* rich comparisons */
+    /* 丰富的比较 */
     richcmpfunc tp_richcompare;
 
     /* weak reference enabler */
+    /* 弱引用 启用码 */
     Py_ssize_t tp_weaklistoffset;
 
     /* Iterators */
+    /* 迭代器 */
     getiterfunc tp_iter;
     iternextfunc tp_iternext;
 
     /* Attribute descriptor and subclassing stuff */
+    /* 属性描述符 和 子类的原料 */
     struct PyMethodDef *tp_methods;
     struct PyMemberDef *tp_members;
     struct PyGetSetDef *tp_getset;
+    // 继承的基类
     struct _typeobject *tp_base;
     PyObject *tp_dict;
     descrgetfunc tp_descr_get;
@@ -244,6 +269,7 @@ typedef struct _typeobject {
     freefunc tp_free; /* Low-level free-memory routine */
     inquiry tp_is_gc; /* For PyObject_IS_GC */
     PyObject *tp_bases;
+    /* 方法解析顺序 */
     PyObject *tp_mro; /* method resolution order */
     PyObject *tp_cache;
     PyObject *tp_subclasses;
@@ -251,12 +277,15 @@ typedef struct _typeobject {
     destructor tp_del;
 
     /* Type attribute cache version tag. Added in version 2.6 */
+    /* 类型属性缓存版本标记。在版本2.6中添加 */
     unsigned int tp_version_tag;
 
     destructor tp_finalize;
     vectorcallfunc tp_vectorcall;
 
     /* bpo-37250: kept for backwards compatibility in CPython 3.8 only */
+    /* 保持向后兼容性只在3.8中 */
+    // 实例对象被的打印时所作的操作
     Py_DEPRECATED(3.8) int (*tp_print)(PyObject *, FILE *, int);
 
 #ifdef COUNT_ALLOCS

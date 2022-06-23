@@ -22,9 +22,12 @@ extern "C" {
 #ifndef Py_LIMITED_API
 typedef struct {
     PyObject_VAR_HEAD
+    // 加个二级指针
     /* Vector of pointers to list elements.  list[0] is ob_item[0], etc. */
+    /* 指向列表元素的指针向量. list[0] is ob_item[0] */
     PyObject **ob_item;
 
+    // 最大容量(分配容量)，PyObject_VAR_HEAD->ob_size表示实际容量
     /* ob_item contains space for 'allocated' elements.  The number
      * currently in use is ob_size.
      * Invariants:
@@ -35,6 +38,17 @@ typedef struct {
      *
      * Items must normally not be NULL, except during construction when
      * the list is not yet visible outside the function that builds it.
+     */
+    /* ob_item 包含 'allocated' 元素的空间(ob_item 存放元素的空间，大小为'allocated')。
+     * 当前使用的数字为ob_size
+     * 无变化的: 
+     *     0 <= ob_size <= allocated
+     *     len(list) == ob_size
+     *     ob_item == NULL 意味着(等价于) ob_size == allocated == 0
+     * list.sort() 暂时将集合分配为-1以检测变化(detect mutations没懂啥意思)
+     * 
+     * 元素通常不能为NULL，除非在构建期间
+     * 列表在构建的时候，它的函数之外尚不可见。(翻译的有点别扭)
      */
     Py_ssize_t allocated;
 } PyListObject;
