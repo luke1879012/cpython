@@ -1960,6 +1960,7 @@ _Py_NewReference(PyObject *op)
         _PyTraceMalloc_NewReference(op);
     }
     _Py_INC_REFTOTAL;
+    // 对于新创建的对象，引用计数为1
     op->ob_refcnt = 1;
     _Py_AddToAllObjects(op, 1);
     _Py_INC_TPALLOCS(op);
@@ -2303,15 +2304,19 @@ _PyObject_AssertFailed(PyObject *obj, const char *expr, const char *msg,
 
 #undef _Py_Dealloc
 
+// 引用计数为0时执行析构函数
+// 在析构的时候，只是将对象占用的空间归还到缓存池，并没有释放
 void
 _Py_Dealloc(PyObject *op)
 {
+    // 获取对应的tp_dealloc函数指针
     destructor dealloc = Py_TYPE(op)->tp_dealloc;
 #ifdef Py_TRACE_REFS
     _Py_ForgetReference(op);
 #else
     _Py_INC_TPFREES(op);
 #endif
+    // 再通过 * 获取指向的函数，调用
     (*dealloc)(op);
 }
 

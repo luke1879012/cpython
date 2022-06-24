@@ -474,20 +474,25 @@ static inline void _Py_ForgetReference(PyObject *op)
 
 PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 
+// 增加引用计数
 static inline void _Py_INCREF(PyObject *op)
 {
     _Py_INC_REFTOTAL;
+    // 引用计数自增1
     op->ob_refcnt++;
 }
 
+// 增加引用计数
 #define Py_INCREF(op) _Py_INCREF(_PyObject_CAST(op))
 
+// 减少引用计数
 static inline void _Py_DECREF(const char *filename, int lineno,
                               PyObject *op)
 {
     (void)filename; /* may be unused, shut up -Wunused-parameter */
     (void)lineno; /* may be unused, shut up -Wunused-parameter */
     _Py_DEC_REFTOTAL;
+    // 引用计数减1，如果减完1变成了0，则执行析构函数
     if (--op->ob_refcnt != 0) {
 #ifdef Py_REF_DEBUG
         if (op->ob_refcnt < 0) {
@@ -500,6 +505,7 @@ static inline void _Py_DECREF(const char *filename, int lineno,
     }
 }
 
+// 减少引用计数
 #define Py_DECREF(op) _Py_DECREF(__FILE__, __LINE__, _PyObject_CAST(op))
 
 
@@ -537,6 +543,7 @@ static inline void _Py_DECREF(const char *filename, int lineno,
  * Python integers aren't currently weakly referencable.  Best practice is
  * to use Py_CLEAR() even if you can't think of a reason for why you need to.
  */
+// 处理空指针的情况
 #define Py_CLEAR(op)                            \
     do {                                        \
         PyObject *_py_tmp = _PyObject_CAST(op); \
@@ -554,6 +561,9 @@ static inline void _Py_XINCREF(PyObject *op)
     }
 }
 
+// 注意：Py_INCREF和Py_DECREF不可以处理NULL指针，会报错
+// 所以又有两个宏，做了一层检测，会判断对象指针为NULL的情况
+// 也就是这里的Py_XINCREF 和 Py_XDECREF
 #define Py_XINCREF(op) _Py_XINCREF(_PyObject_CAST(op))
 
 static inline void _Py_XDECREF(PyObject *op)
