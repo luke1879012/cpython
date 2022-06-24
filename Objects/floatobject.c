@@ -115,18 +115,40 @@ PyFloat_GetInfo(void)
 PyObject *
 PyFloat_FromDouble(double fval)
 {
+    // 创建浮点数对象的时候会优先从缓存池里面获取
+    // 而缓存池是实用链表实现的，每一个节点就是PyFloatObject实例
+    // free_list(指针)指向链表的第一个节点
     PyFloatObject *op = free_list;
+    // op不是NULL，说明缓存池中有对象，成功获取
     if (op != NULL) {
+        // 而一旦获取了，那么就要维护free_list
+        // 要将free_list指向链表中的下一个节点
+        // 但问题来了，为啥获取下一个节点要通过Py_TYPE
+        // Py_TYPE不是一个宏吗？用来获取的对象的ob_type
+        // 结论：ob_type充当了链表中的next指针
         free_list = (PyFloatObject *) Py_TYPE(op);
+        // 然后还要将缓存池(链表)的节点个数，
+        // 也就是可以直接使用的浮点数对象的数量减1
         numfree--;
     } else {
+        // 否则的话，说明缓存池里面已经没有可用对象了
+        // 那么会调用PyObject_MALLOC申请内存
+        // PyObject_MALLOC是基于malloc的一个封装
         op = (PyFloatObject*) PyObject_MALLOC(sizeof(PyFloatObject));
+        // 申请失败的话，证明内存不够了
         if (!op)
             return PyErr_NoMemory();
     }
+    // 走到这里说明内存分配好了，PyFloatObject也创建了
+    // 但是ob_refcnt、ob_type、ob_fval三个成员还没有被初始化
+    // 将ob_refcnt设置为1
+    // ob_type设置为指向PyFloat_Type的指针
+    // 而PyObject_INIT是一个宏，它就是专门用来设置ob_type以及ob_refcnt的
     /* Inline PyObject_New */
     (void)PyObject_INIT(op, &PyFloat_Type);
+    // 将内部的ob_fval成员设置为fval，所以此时三个成员都以及初始化完毕
     op->ob_fval = fval;
+    // 将其转成PyObject *返回
     return (PyObject *) op;
 }
 
@@ -1600,12 +1622,21 @@ static PyObject *
 float_new_impl(PyTypeObject *type, PyObject *x)
 /*[clinic end generated code: output=ccf1e8dc460ba6ba input=540ee77c204ff87a]*/
 {
+    // 如果type不是&PyFloat_Type，那么必须是它的子类
+    // 否则调用float_subtype_new会报错
+    // 但该条件很少触发，因为创建的是浮点数
+    // 所以type基本都是&PyFloat_Type
     if (type != &PyFloat_Type)
         return float_subtype_new(type, x); /* Wimp out */
+    // 然后检测这个x类型，如果它是一个字符串
+    // 那么就根据字符串创建浮点数, 比如: float("3.14")
     /* If it's a string, but not a string subclass, use
        PyFloat_FromString. */
+    /* 如果这是字符串，不是字符串的子类，
+       使用PyFloat_FromString */
     if (PyUnicode_CheckExact(x))
         return PyFloat_FromString(x);
+    // 不是字符串，则调用PyNumber_Float
     return PyNumber_Float(x);
 }
 

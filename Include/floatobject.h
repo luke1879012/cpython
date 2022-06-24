@@ -12,6 +12,7 @@ extern "C" {
 #endif
 
 #ifndef Py_LIMITED_API
+// float的结构体
 typedef struct {
     PyObject_HEAD
     // float 类型就是加了一个double的ob_fval, 用于记录

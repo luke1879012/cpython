@@ -184,6 +184,7 @@ float_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
     }
     x = PyTuple_GET_ITEM(args, 0);
 skip_optional:
+    // float的创建
     return_value = float_new_impl(type, x);
 
 exit:

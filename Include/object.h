@@ -461,6 +461,7 @@ static inline void _Py_NewReference(PyObject *op)
     }
     _Py_INC_TPALLOCS(op);
     _Py_INC_REFTOTAL;
+    // 设置ob_refcnt为1
     Py_REFCNT(op) = 1;
 }
 

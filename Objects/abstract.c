@@ -1452,23 +1452,36 @@ PyNumber_Long(PyObject *o)
 PyObject *
 PyNumber_Float(PyObject *o)
 {
+    // 方法簇
     PyNumberMethods *m;
 
+    // 传递的是NULL，直接返回错误
     if (o == NULL) {
         return null_error();
     }
 
+    // 如果传递过来的本来就是个浮点数
+    // 那么增加引用计数之后，直接返回
     if (PyFloat_CheckExact(o)) {
         Py_INCREF(o);
         return o;
     }
+    // 走到这里说明不是浮点数，那么它必须能够转成浮点数
+    // 也就是类型对象的内部要有__float__这个模仿方法，即nb_float
+    // 这里拿到相应地方法簇
     m = o->ob_type->tp_as_number;
+    // 如果方法簇不为空，并且也实现了nb_float
     if (m && m->nb_float) { /* This should include subclasses of float */
+        // 调用nb_float转换为浮点数
         PyObject *res = m->nb_float(o);
         double val;
+        // 如果res不为空、并且是浮点数，直接返回
         if (!res || PyFloat_CheckExact(res)) {
             return res;
         }
+        // 走到这里说明__float__返回的对象的类型不是一个float
+        // 如果不是float，那么float的子类目前可以的（会抛异常）
+        // PyFloat_Check则检查对象的类型是否是flaot或者其子类
         if (!PyFloat_Check(res)) {
             PyErr_Format(PyExc_TypeError,
                          "%.50s.__float__ returned non-float (type %.50s)",
@@ -1485,25 +1498,38 @@ PyNumber_Float(PyObject *o)
             Py_DECREF(res);
             return NULL;
         }
+        // 到这里说明，res的类型是float的子类
+        // 那么获取ob_fval成员的值
         val = PyFloat_AS_DOUBLE(res);
         Py_DECREF(res);
+        // 构建浮点数，返回它的泛型指针 PyObject *
         return PyFloat_FromDouble(val);
     }
+    // 如果没有__float__，那么会去找__index__
     if (m && m->nb_index) {
         PyObject *res = PyNumber_Index(o);
         if (!res) {
             return NULL;
         }
+        // __index__返回的必须是整数
+        // 所以调用的是PyLong_AsDouble，而不是PyFloat_AsDouble
         double val = PyLong_AsDouble(res);
         Py_DECREF(res);
         if (val == -1.0 && PyErr_Occurred()) {
             return NULL;
         }
+        // 根据val构建PyFloatObject
         return PyFloat_FromDouble(val);
     }
+    // 如果类型不是float，并且内部也没有__float__和__index__
+    // 那么检测传递的类型是不是float的子类
+    // 如果是，证明它的结构和浮点数是一致的
+    // 直接根据ob_fval构建PyFloatObject
     if (PyFloat_Check(o)) { /* A float subclass with nb_float == NULL */
         return PyFloat_FromDouble(PyFloat_AS_DOUBLE(o));
     }
+    // 走到这里就真的没办法了，解释器实在不知道怎么办了
+    // 所以只能把它当做字符串来生成浮点数
     return PyFloat_FromString(o);
 }
 

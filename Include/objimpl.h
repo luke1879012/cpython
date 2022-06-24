@@ -137,10 +137,12 @@ static inline PyObject*
 _PyObject_INIT(PyObject *op, PyTypeObject *typeobj)
 {
     assert(op != NULL);
+    // 设置ob_type
     Py_TYPE(op) = typeobj;
     if (PyType_GetFlags(typeobj) & Py_TPFLAGS_HEAPTYPE) {
         Py_INCREF(typeobj);
     }
+    // 设置ob_refcnt为1
     _Py_NewReference(op);
     return op;
 }
