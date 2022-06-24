@@ -93,9 +93,13 @@ typedef PyObject *(*vectorcallfunc)(PyObject *callable, PyObject *const *args,
 
 
 typedef struct {
+    // 方法簇
     /* Number implementations must check *both*
        arguments for proper type and implement the necessary conversions
        in the slot functions themselves. */
+    /* Number实现必须检查*both*
+       参数的类型是否正确，并实现必要的转换
+       在本身的插槽函数中 */
 
     binaryfunc nb_add;
     binaryfunc nb_subtract;

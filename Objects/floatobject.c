@@ -1844,6 +1844,7 @@ static PyGetSetDef float_getset[] = {
 };
 
 
+// float作为number方法簇
 static PyNumberMethods float_as_number = {
     float_add,          /* nb_add */
     float_sub,          /* nb_subtract */

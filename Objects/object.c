@@ -818,21 +818,45 @@ PyObject_HashNotImplemented(PyObject *v)
 Py_hash_t
 PyObject_Hash(PyObject *v)
 {
+    // Py_Type是一个宏，用来获取PyObject *内部的ob_type
     PyTypeObject *tp = Py_TYPE(v);
+    // 获取对应的类型对象内部的tp_hash
+    // tp_hash 对应 __hash__
+    // 快分支，提高命中率
     if (tp->tp_hash != NULL)
+        // 如果tp_hash不为空，证明确实指向了具体的hash函数
+        // 那么拿到函数指针之后，通过*获取对应的函数
+        // 然后将PyObject *传进去计算哈希值，返回
         return (*tp->tp_hash)(v);
     /* To keep to the general practice that inheriting
      * solely from object in C code should work without
      * an explicit call to PyType_Ready, we implicitly call
      * PyType_Ready here and then check the tp_hash slot again
      */
+    /* 按照常规做法，
+     * 仅从C代码中的对象应该
+     * 在不显式调用PyType_Ready，我们在此隐式调用
+     * PyType_Ready，然后再检查 tp_hash 槽
+     */
+    // 走到这里说明tp_hash为空，但这存在两种可能
+    // 1. 说明该类型对象可能还未完全初始化，导致tp_hash暂时为空
+    // 2. 说明该类型本身就不支持其 "实例对象" 被哈希
+    // 如果是第1种情况，那么它的 tp_dict、也就是属性字典一定为空
+    // tp_dict是动态设置的，它为空，是类型对象没有完全初始化的重要特征
+    // 但如果tp_dict不为空，说明类型对象一定已经被完全初始化了
+    // 所以此时tp_hash要还是为空，就真的说明该类型不支持实例对象被哈希
     if (tp->tp_dict == NULL) {
+        // 属性字典为空，那么先进行类型的初始化
         if (PyType_Ready(tp) < 0)
             return -1;
+        // 然后在看是否tp_hash是否为空，为空的话，说明不支持哈希
         if (tp->tp_hash != NULL)
+            // 不为空则调用对应的哈希函数
             return (*tp->tp_hash)(v);
     }
+    // 走到这里代表以上条件都不满足，说明对象不可以被hash
     /* Otherwise, the object can't be hashed */
+    /* 否则，无法对对象进行哈希运算 */
     return PyObject_HashNotImplemented(v);
 }
 
