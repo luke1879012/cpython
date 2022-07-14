@@ -1467,8 +1467,8 @@ PyNumber_Float(PyObject *o)
         return o;
     }
     // 走到这里说明不是浮点数，那么它必须能够转成浮点数
-    // 也就是类型对象的内部要有__float__这个模仿方法，即nb_float
-    // 这里拿到相应地方法簇
+    // 也就是类型对象的内部要有__float__这个魔法方法，即nb_float
+    // 这里拿到相应的方法簇
     m = o->ob_type->tp_as_number;
     // 如果方法簇不为空，并且也实现了nb_float
     if (m && m->nb_float) { /* This should include subclasses of float */
