@@ -40,3 +40,24 @@ float -> 24
 
 
 ```
+
+## 各个类型的生命周期
+
+### float
+#### 创建对象
+Python/C API:
+```
+PyFloat_FromDouble
+PyFloat_FromString
+```
+
+通用: 
+```
+PyFloat_Type -> float_new -> float_new_impl
+-> float_subtype_new
+   PyFloat_FromString
+   PyNumber_Float -> tp_as_number->nb_float -> __float__
+                     tp_as_number->nb_index -> __index__
+                     PyFloat_FromDouble
+                     PyFloat_FromString
+```
