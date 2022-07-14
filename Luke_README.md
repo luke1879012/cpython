@@ -32,13 +32,8 @@ frozenset -> PyFrozenSet_Type (PyTypeObject结构体实例)
 ```
 
 ## 各个类型的内存大小
-```
+* [float](#内存大小)
 
-float -> 24
-
-
-
-```
 
 # 各个类型实现
 ## float
