@@ -1,4 +1,13 @@
 # 序
+
+## 源码结构
+* `Include`: 包含了Cpython所提供的所有头文件，主要包含了一些实例对象在底层的定义
+* `Lib`: Python自带的所有标准库，基本都是纯Python写的
+* `Modules`: 包含了所有C语言编写的模块。针对速度要求非常严格的模块
+* `Parser`: 包含了解释器中的`Scanner`和`Parser`部分(词法分析和语法分析)。
+* `Objects`: 包含了所有Python的内置类型对象的实现，以及其实例对象相关操作的实现。
+* `Python`: 虚拟机的实现相关，Python运行的核心
+
 ## Python对象在底层都叫啥名字？
 ```
 整数 -> PyLongObject 结构体实例
@@ -99,3 +108,6 @@ static PyFloatObject *free_list = NULL;
 
 使用内部的ob_type来指向下一个对象
 
+
+### 行为
+float_as_number [跳转](Objects/floatobject.c)

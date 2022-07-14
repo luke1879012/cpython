@@ -581,12 +581,22 @@ float_hash(PyFloatObject *v)
 static PyObject *
 float_add(PyObject *v, PyObject *w)
 {
+    // 显然两个Python对象相加
+    // 一定是先将其转成C的对象，然后再相加
+    // 加完之后再根据结果创建新的Python对象
+    // 所以声明了两个double
     double a,b;
+    // CONVERT_TO_DOUBLE是一个宏
+    // 将PyFloatObject里面的ob_fval抽出来，赋值给double变量
     CONVERT_TO_DOUBLE(v, a);
     CONVERT_TO_DOUBLE(w, b);
+    // PyFPE_START_PROTECT和PyFPE_END_PROTECT
+    // 为了计算出错时，将IEEE-754异常转换成Python中的异常
     PyFPE_START_PROTECT("add", return 0)
     a = a + b;
     PyFPE_END_PROTECT(a)
+    // 根据相加后的结果创建新的PyFloatObject对象
+    // 当然返回的是泛型指针PyObject *
     return PyFloat_FromDouble(a);
 }
 
