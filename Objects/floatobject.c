@@ -239,14 +239,29 @@ static void
 float_dealloc(PyFloatObject *op)
 {
     if (PyFloat_CheckExact(op)) {
+        // numfree就是当前缓存池已容纳的PyFloatObject实例的数量
+        // 如果达到了缓存池的最大容量
         if (numfree >= PyFloat_MAXFREELIST)  {
+            // 调用PyObject_FREE回收对象内存
             PyObject_FREE(op);
             return;
         }
+        // 否则的话，说明没有达到最大容量限制
+        // 将其放到缓存池中
+        // 将numfree加1
         numfree++;
+        // free_list指向链表的第一个节点
+        // 而这里是获取op的ob_type，让其等于free_list
+        // 但ob_type的类型是struct _typeobject *
+        // 所以交给ob_type保存的时候，还要将free_list的类型转化一下
+        // 在使用的时候，再转成PyFloatObject *
         Py_TYPE(op) = (struct _typeobject *)free_list;
+        // 头插法
         free_list = op;
     }
+    // 否则的话，说明PyFloat_CheckExcat(op)为假
+    // 说明此时op的类型不是float
+    // 直接调用tp_free，释放内存
     else
         Py_TYPE(op)->tp_free((PyObject *)op);
 }

@@ -31,16 +31,31 @@ frozenset -> PyFrozenSet_Type (PyTypeObject结构体实例)
 元类: PyType_Type (PyTypeObject结构体实例)
 ```
 
+
+
+
 ## 各个类型的内存大小
 * [float](#内存大小)
 
 
 # 各个类型实现
 ## float
-### 内存大小
+实例对象: PyFloatObject [跳转](Include\floatobject.h)
+```C
+typedef struct {
+    PyObject_HEAD
+    double ob_fval;
+} PyFloatObject;
 ```
-todo 具体?
-24
+
+类型对象: PyFloat_Type [跳转](Objects\floatobject.c)
+
+
+### 内存大小
+24bit
+```
+PyObject_HEAD: 16bit
+double: 8bit
 ```
 
 ### 生命周期
@@ -62,3 +77,25 @@ PyFloat_Type -> float_new -> float_new_impl
                      PyFloat_FromDouble
                      PyFloat_FromString
 ```
+
+#### 销毁对象
+```
+PyFloat_Type -> float_dealloc
+```
+
+
+
+### 缓存池
+空间换时间
+#### 定义
+路径: `Objects/floatobject.c` [跳转](Objects/floatobject.c)
+```C
+#ifndef PyFloat_MAXFREELIST
+#define PyFloat_MAXFREELIST    100
+#endif
+static int numfree = 0;
+static PyFloatObject *free_list = NULL;
+```
+
+使用内部的ob_type来指向下一个对象
+
