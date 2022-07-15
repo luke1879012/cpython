@@ -50,6 +50,8 @@ frozenset -> PyFrozenSet_Type (PyTypeObject结构体实例)
 * [float](#内存大小)
 
 
+
+
 # 各个类型实现
 ## float
 实例对象: PyFloatObject [跳转](Include\floatobject.h)
@@ -63,12 +65,16 @@ typedef struct {
 类型对象: PyFloat_Type [跳转](Objects\floatobject.c)
 
 
+
 ### 内存大小
+
 24字节
 ```
 PyObject_HEAD: 16字节
 double: 8字节
 ```
+
+
 
 ### 生命周期
 
@@ -112,11 +118,15 @@ static PyFloatObject *free_list = NULL;
 使用内部的ob_type来指向下一个对象
 
 
+
 ### 行为
+
 float_as_number [跳转](Objects/floatobject.c)
 
 
+
 ## int
+
 实例对象: PyLongObject [跳转](Include\longintrepr.h)
 ```C
 struct _longobject {
@@ -126,6 +136,8 @@ struct _longobject {
 ```
 
 类型对象: 
+
+
 
 ### 不会溢出的实现
 ```
@@ -141,7 +153,10 @@ PyLongObject {
 
 > 2.为了方便计算乘法，需要多保留1位用于计算溢出。这样当两个整数相乘的时候，可以直接按digit计算，并且由于兼顾了"溢出位"，可以把结果直接保存在一个寄存器中，以获得最佳性能。
 
+
+
 ### 内存大小
+
 ```
 ob_refcnt: 8字节
 ob_type: 8字节
@@ -158,3 +173,59 @@ print(a // 2 ** 30)  # 82
 print(a - 82 * 2 ** 30)  # 842059320
 # 所以整数88888888888在底层对应的ob_digit数组为[842059320, 82]
 ```
+
+
+
+### 生命周期
+
+#### 创建对象
+Python/C API: 
+```
+PyLong_FromLong
+PyLong_FromDouble
+PyLong_FromString
+```
+
+
+
+### 小整数对象池
+
+Python将那些使用频率高的整数预先创建好，而且都是单例模式，这些预先创建好的整数会放在一个静态数组里面，我们称为小整数对象池
+
+>  注意：这些整数在Python解释器启动的时候，就已经创建了。
+
+实现 `Objects\longobject.c`： [跳转](Objects\longobject.c)
+
+```c
+#ifndef NSMALLPOSINTS
+#define NSMALLPOSINTS           257
+#endif
+#ifndef NSMALLNEGINTS
+#define NSMALLNEGINTS           5
+#endif
+
+static PyLongObject small_ints[NSMALLNEGINTS + NSMALLPOSINTS];
+```
+
+python3.8的优化：对于那些在编译期就能确定的常量，即使不在同一个编译单元中，那么也会只有一份 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

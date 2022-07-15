@@ -16,9 +16,11 @@ class int "PyObject *" "&PyLong_Type"
 /*[clinic end generated code: output=da39a3ee5e6b4b0d input=ec0275e3422a36e3]*/
 
 #ifndef NSMALLPOSINTS
+// 对象池中正数的个数（从0开始，包括0）
 #define NSMALLPOSINTS           257
 #endif
 #ifndef NSMALLNEGINTS
+// 对象池中负数的个数
 #define NSMALLNEGINTS           5
 #endif
 
@@ -40,6 +42,7 @@ PyObject *_PyLong_One = NULL;
    The integers that are preallocated are those in the range
    -NSMALLNEGINTS (inclusive) to NSMALLPOSINTS (not inclusive).
 */
+// 小整数池
 static PyLongObject small_ints[NSMALLNEGINTS + NSMALLPOSINTS];
 #ifdef COUNT_ALLOCS
 Py_ssize_t _Py_quick_int_allocs, _Py_quick_neg_int_allocs;
