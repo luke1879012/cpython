@@ -41,6 +41,7 @@ extern "C" {
   platform.
 */
 
+// 如果64位电脑就是30，不知为啥
 #if PYLONG_BITS_IN_DIGIT == 30
 typedef uint32_t digit;
 typedef int32_t sdigit; /* signed variant of digit */
@@ -49,6 +50,7 @@ typedef int64_t stwodigits; /* signed variant of twodigits */
 #define PyLong_SHIFT    30
 #define _PyLong_DECIMAL_SHIFT   9 /* max(e such that 10**e fits in a digit) */
 #define _PyLong_DECIMAL_BASE    ((digit)1000000000) /* 10 ** DECIMAL_SHIFT */
+// 32位的电脑就是15
 #elif PYLONG_BITS_IN_DIGIT == 15
 typedef unsigned short digit;
 typedef short sdigit; /* signed variant of digit */
@@ -84,6 +86,8 @@ typedef long stwodigits; /* signed variant of twodigits */
 
 struct _longobject {
     PyObject_VAR_HEAD
+    // 虽然定义的时候，声明数组的长度为 1，
+    // 但你可以把它当成长度为 n 的数组来用，这是 C 语言中常见的编程技巧
     digit ob_digit[1];
 };
 

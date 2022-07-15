@@ -8,6 +8,8 @@
 * `Objects`: 包含了所有Python的内置类型对象的实现，以及其实例对象相关操作的实现。
 * `Python`: 虚拟机的实现相关，Python运行的核心
 
+
+
 ## Python对象在底层都叫啥名字？
 ```
 整数 -> PyLongObject 结构体实例
@@ -44,6 +46,7 @@ frozenset -> PyFrozenSet_Type (PyTypeObject结构体实例)
 
 
 ## 各个类型的内存大小
+使用`sys.getsizeof`获取，Python中对象的大小，是根据底层的结构体计算出来的
 * [float](#内存大小)
 
 
@@ -61,10 +64,10 @@ typedef struct {
 
 
 ### 内存大小
-24bit
+24字节
 ```
-PyObject_HEAD: 16bit
-double: 8bit
+PyObject_HEAD: 16字节
+double: 8字节
 ```
 
 ### 生命周期
@@ -111,3 +114,47 @@ static PyFloatObject *free_list = NULL;
 
 ### 行为
 float_as_number [跳转](Objects/floatobject.c)
+
+
+## int
+实例对象: PyLongObject [跳转](Include\longintrepr.h)
+```C
+struct _longobject {
+    PyObject_VAR_HEAD
+    digit ob_digit[1];
+};
+```
+
+类型对象: 
+
+### 不会溢出的实现
+```
+PyLongObject {
+   ob_refcnt:
+   ob_type:
+   ob_size: 实现正负数，以及ob_digit数组的长度
+   ob_digit: 32位无符号的整数(实际使用30位)
+}
+```
+为什么解释器只使用30位？
+> 1.加法进位有关，只能30位的话，相加之后还是可以用32位整数保存(溢出的话会先强制转换为64位整数再进行计算，影响效率)
+
+> 2.为了方便计算乘法，需要多保留1位用于计算溢出。这样当两个整数相乘的时候，可以直接按digit计算，并且由于兼顾了"溢出位"，可以把结果直接保存在一个寄存器中，以获得最佳性能。
+
+### 内存大小
+```
+ob_refcnt: 8字节
+ob_type: 8字节
+ob_size: 8字节
+ob_digit: 4字节 * ob_size(绝对值)
+```
+例子：
+```python
+import numpy as np
+a = 88888888888
+print(np.log2(a + 1))  # 36.371284042320475
+# 所以至少需要37位。一个digit是30位，所以需要两个digit
+print(a // 2 ** 30)  # 82
+print(a - 82 * 2 ** 30)  # 842059320
+# 所以整数88888888888在底层对应的ob_digit数组为[842059320, 82]
+```
