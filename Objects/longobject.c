@@ -3061,23 +3061,40 @@ PyLong_AsDouble(PyObject *v)
 static int
 long_compare(PyLongObject *a, PyLongObject *b)
 {
+    // 64int，用来表示a和b之间的比较结果
+    // a == b  =>  sign = 0
+    // a > b   =>  sign > 0
     Py_ssize_t sign;
 
+    // Py_SIZE是一个宏，获取对象的ob_size
     if (Py_SIZE(a) != Py_SIZE(b)) {
+        // 先比较两个整数的ob_size
+        // 如果不同，直接比较大小
         sign = Py_SIZE(a) - Py_SIZE(b);
     }
     else {
+        // 如果相等，那么说明a和b的符号相同，数组长度也一样
+        // 那么接下来就只能挨个比较数组中的digit
+        // Py_ABS是一个宏，获取整数的绝对值
         Py_ssize_t i = Py_ABS(Py_SIZE(a));
+        // 进行while循环，i是数组的长度，因此数组的最大索引是i-1
+        // 所以这里的--i会先将i自减1，在判断是否>=0
         while (--i >= 0 && a->ob_digit[i] == b->ob_digit[i])
+            // 然后比较 a->ob_digit[i] 和 b->ob_digit[i]
+            // 如果数组内元素全部一样，那么循环结束后，i肯定是-1
+            // 只要有个一个不一样，那么i一定>=0
             ;
         if (i < 0)
             sign = 0;
         else {
+            // 直接相减就可以了
             sign = (sdigit)a->ob_digit[i] - (sdigit)b->ob_digit[i];
+            // 如果sign大于0，不用管
             if (Py_SIZE(a) < 0)
                 sign = -sign;
         }
     }
+    // sign < 0 => -1 => a < b
     return sign < 0 ? -1 : sign > 0 ? 1 : 0;
 }
 
