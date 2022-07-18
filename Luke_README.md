@@ -47,7 +47,8 @@ frozenset -> PyFrozenSet_Type (PyTypeObject结构体实例)
 
 ## 各个类型的内存大小
 使用`sys.getsizeof`获取，Python中对象的大小，是根据底层的结构体计算出来的
-* [float](#内存大小)
+* [float](#float内存大小)
+* [int](#int内存大小)
 
 
 
@@ -74,7 +75,7 @@ typedef struct {
 
 
 
-### 内存大小
+### float内存大小
 
 24字节
 ```
@@ -163,7 +164,7 @@ PyLongObject {
 
 
 
-### 内存大小
+### int内存大小
 
 ```
 ob_refcnt: 8字节
@@ -336,6 +337,8 @@ PyLong_Type -> long_as_number -> long_sub -> x_add
 3. 转换成对应的绝对值计算
 
 
+
+## bytes
 
 
 
