@@ -128,6 +128,7 @@ _PyLong_Negate(PyLongObject **x_p)
 static PyLongObject *
 long_normalize(PyLongObject *v)
 {
+    // 从后往前（高位往低位）依次检查ob_digit的元素是否为0
     Py_ssize_t j = Py_ABS(Py_SIZE(v));
     Py_ssize_t i = j;
 
@@ -3173,32 +3174,53 @@ long_hash(PyLongObject *v)
 static PyLongObject *
 x_add(PyLongObject *a, PyLongObject *b)
 {
+    // 获取a和b的ob_size的绝对值
     Py_ssize_t size_a = Py_ABS(Py_SIZE(a)), size_b = Py_ABS(Py_SIZE(b));
+    // 返回值z
     PyLongObject *z;
+    // 循环变量
     Py_ssize_t i;
+    // 每个部分的运算结果
     digit carry = 0;
 
     /* Ensure a is the larger of the two: */
+    /* 确保 a的位数 更多 */
+    // 如果size_a小于size_b
     if (size_a < size_b) {
+        // 那么将a和b进行交换
+        // 为啥呢？ 方便计算
         { PyLongObject *temp = a; a = b; b = temp; }
         { Py_ssize_t size_temp = size_a;
             size_a = size_b;
             size_b = size_temp; }
     }
+    // 因为上面的if语句，所以size_a肯定比size_b大
+    // 它们两个相加的结果，肯定小于size_a+1
     z = _PyLong_New(size_a+1);
     if (z == NULL)
         return NULL;
+    // 以size_b为准，从低位向高位一次对应相加
+    // 当b到头了，再单独算a的剩余部分
     for (i = 0; i < size_b; ++i) {
+        // 相加作为carry
         carry += a->ob_digit[i] + b->ob_digit[i];
+        // 保留没有溢出的部分
         z->ob_digit[i] = carry & PyLong_MASK;
+        // 右移30位，可以保留溢出位，作用到下一个循环中
         carry >>= PyLong_SHIFT;
     }
+    // 从b结束位置，继续
     for (; i < size_a; ++i) {
+        // 同理，不说了
+        // 针对的是进位的操作
         carry += a->ob_digit[i];
         z->ob_digit[i] = carry & PyLong_MASK;
         carry >>= PyLong_SHIFT;
     }
+    // 将可能多的一位，赋值
     z->ob_digit[i] = carry;
+    // 通过long_normalize检查高位
+    // 如果高位为0，则删除高位
     return long_normalize(z);
 }
 
@@ -3207,13 +3229,19 @@ x_add(PyLongObject *a, PyLongObject *b)
 static PyLongObject *
 x_sub(PyLongObject *a, PyLongObject *b)
 {
+    // 依旧是获取两者的ob_size的绝对值
     Py_ssize_t size_a = Py_ABS(Py_SIZE(a)), size_b = Py_ABS(Py_SIZE(b));
+    // 结果z
     PyLongObject *z;
+    // 循环变量
     Py_ssize_t i;
+    // size_a < size_b => sign = -1
     int sign = 1;
+    // 保留相减的结果
     digit borrow = 0;
 
     /* Ensure a is the larger of the two: */
+    /* 确保 a 更大 */
     if (size_a < size_b) {
         sign = -1;
         { PyLongObject *temp = a; a = b; b = temp; }
@@ -3224,52 +3252,95 @@ x_sub(PyLongObject *a, PyLongObject *b)
     else if (size_a == size_b) {
         /* Find highest digit where a and b differ: */
         i = size_a;
+        // 高位开始遍历，找到不同的那一位
         while (--i >= 0 && a->ob_digit[i] == b->ob_digit[i])
             ;
+        // 如果都相等，那么i = -1
         if (i < 0)
             return (PyLongObject *)PyLong_FromLong(0);
+        // 但如果某个对应的元素不相等
+        // 假设a的ob_digit是[2,3,4,5], b的ob_digit是[1,2,3,5]
+        // 因为上面的while循环结束之后，i会等于2
+        // 显然值需要计算[2,3,4]和[1,2,3]之间的差即可
         if (a->ob_digit[i] < b->ob_digit[i]) {
             sign = -1;
             { PyLongObject *temp = a; a = b; b = temp; }
         }
+        // 因为前面的循环，已经跳过了高位相同部分
+        // 所有这里直接设置 i+1 即可
         size_a = size_b = i+1;
     }
+    // 因为size_a>size_b，所以相减之后一定小于size_a
     z = _PyLong_New(size_a);
     if (z == NULL)
         return NULL;
     for (i = 0; i < size_b; ++i) {
         /* The following assumes unsigned arithmetic
            works module 2**N for some N>PyLong_SHIFT. */
+        // 如果存在借位，还要减掉上一次的借位
+        // 如果相减 borrow 为负数怎么办？
+        // 不用担心 borrow 为无符号的，所以负数会被转成正数
+        // 比如: 这里相减得到的是 -100
+        // 那么结果就是 2 ** 32 - 100
+        // 相当于自动往数组的下一个元素借了一位
         borrow = a->ob_digit[i] - b->ob_digit[i] - borrow;
+        // 保留没有溢出部分
         z->ob_digit[i] = borrow & PyLong_MASK;
+        // 如果真的借了1，那么ob_digit中下一个元素肯定要减去1
+        // 怎么判断呢？
+        // 如果有借位，那么borrow一定大于2**30，那么第31位一定是1
+        // 所以往右移30位
         borrow >>= PyLong_SHIFT;
+        // 再与1进行与运算，并进入下一个循环
         borrow &= 1; /* Keep only one sign bit */
     }
     for (; i < size_a; ++i) {
+        // 同理
         borrow = a->ob_digit[i] - borrow;
         z->ob_digit[i] = borrow & PyLong_MASK;
         borrow >>= PyLong_SHIFT;
         borrow &= 1; /* Keep only one sign bit */
     }
+    // 因为 size_a > size_b
+    // 所以最后不会产生借位
     assert(borrow == 0);
     if (sign < 0) {
+        // 如果 sign < 0，说明结果是负数
         Py_SIZE(z) = -Py_SIZE(z);
     }
+    // 删除高位的0
+    // 比如 10000 - 9999，得到是 00001
     return long_normalize(z);
 }
 
 static PyObject *
 long_add(PyLongObject *a, PyLongObject *b)
 {
+    // z显然是相加之后的PyLongObject
     PyLongObject *z;
 
+    // CHECH_BINOP是一个宏，接受两个指针
+    // 检测它们是不是都指向PyLongObject
     CHECK_BINOP(a, b);
 
+    // 快分支
+    // 如果a和b的ob_size的绝对值是不是都小于等于1
+    // => 绝对值超过 2**30-1 的整数还是比较少的
     if (Py_ABS(Py_SIZE(a)) <= 1 && Py_ABS(Py_SIZE(b)) <= 1) {
+        // MEDIUM_VALUE是一个宏
+        // ob_size <  0 => -ob_digit[0]
+        // ob_size == 0 => 0
+        // ob_size >  0 => ob_digit[0]
+        // 相加后，转成PyLongObject对象，返回
         return PyLong_FromLong(MEDIUM_VALUE(a) + MEDIUM_VALUE(b));
     }
+    // 走到这里，说明至少有一方ob_size的绝对值大于1
+    // 如果 a < 0
     if (Py_SIZE(a) < 0) {
+        // 如果a < 0 并且 b < 0
         if (Py_SIZE(b) < 0) {
+            // 说明符号相同，那么调用x_add对两个整数进行相加
+            // x_add专门用于整数的绝对值相加，并返回PyLongObject *
             z = x_add(a, b);
             if (z != NULL) {
                 /* x_add received at least one multiple-digit int,
@@ -3277,35 +3348,57 @@ long_add(PyLongObject *a, PyLongObject *b)
                    That also means z is not an element of
                    small_ints, so negating it in-place is safe. */
                 assert(Py_REFCNT(z) == 1);
+                // 因为a和b指向的整数都是负数
+                // 所以还要将ob_size乘-1
                 Py_SIZE(z) = -(Py_SIZE(z));
             }
         }
         else
+            // 如果 a < 0 并且 b >= 0
+            // 直接转换为 a + b => |b| - |a|
+            // x_sub 专门用于整数的绝对值的减法
             z = x_sub(b, a);
     }
     else {
         if (Py_SIZE(b) < 0)
+            // 如果 a >= 0 并且 b < 0
+            // 转换为 |a| - |b|
             z = x_sub(a, b);
         else
+            // 如果 a >= 0 并且 b >= 0
+            // 直接加, 就好了
             z = x_add(a, b);
     }
+    // 将z转成泛型指针，返回
     return (PyObject *)z;
 }
 
 static PyObject *
 long_sub(PyLongObject *a, PyLongObject *b)
 {
+    // 结果存在 z 中
     PyLongObject *z;
 
+    // 判断是否都指向PyLongObject
     CHECK_BINOP(a, b);
 
+    // 还是快分支
     if (Py_ABS(Py_SIZE(a)) <= 1 && Py_ABS(Py_SIZE(b)) <= 1) {
+        // 直接相减，返回就好
         return PyLong_FromLong(MEDIUM_VALUE(a) - MEDIUM_VALUE(b));
     }
+    // a < 0
     if (Py_SIZE(a) < 0) {
         if (Py_SIZE(b) < 0)
+            // a < 0 并且 b < 0，因为都小于0，绝对值相减后，需要取反
+            // 比如：(-10) - (-20) <=> 10 <=> -(10 - 20)
+            //       (-15) - (-12) <=> -3 <=> -(15 - 12)
+            // 转换为 a - b => -(|a| - |b|)
             z = x_sub(a, b);
         else
+            // a < 0 并且 b >= 0
+            // 比如：(-3) - 5 => -(3 + 5)
+            // 转换为 a - b => -(|a| + |b|)
             z = x_add(a, b);
         if (z != NULL) {
             assert(Py_SIZE(z) == 0 || Py_REFCNT(z) == 1);
@@ -3314,8 +3407,13 @@ long_sub(PyLongObject *a, PyLongObject *b)
     }
     else {
         if (Py_SIZE(b) < 0)
+            // a >= 0 并且 b < 0
+            // 比如：4 - (-5) => 4 + 5
+            // 转换为 a - b => |a| + |b|
             z = x_add(a, b);
         else
+            // a >= 0 并且 b >= 0
+            // 都大于0，不用考虑符号了，直接绝对值相减
             z = x_sub(a, b);
     }
     return (PyObject *)z;

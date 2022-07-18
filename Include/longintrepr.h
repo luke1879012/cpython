@@ -63,6 +63,7 @@ typedef long stwodigits; /* signed variant of twodigits */
 #error "PYLONG_BITS_IN_DIGIT should be 15 or 30"
 #endif
 #define PyLong_BASE     ((digit)1 << PyLong_SHIFT)
+// PyLong_MASK 就是 30 个 1
 #define PyLong_MASK     ((digit)(PyLong_BASE - 1))
 
 #if PyLong_SHIFT % 5 != 0
