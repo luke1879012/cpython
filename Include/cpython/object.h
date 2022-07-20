@@ -37,16 +37,31 @@ typedef struct _Py_Identifier {
 #define _Py_IDENTIFIER(varname) _Py_static_string(PyId_##varname, #varname)
 
 /* buffer interface */
+/* buffer 接口 */
+// 意义：共享内存
 typedef struct bufferinfo {
+    // 指针，指向具体的缓冲区
+    // 注意：指向的永远是一个一维数组
     void *buf;
+    // 实现缓冲区协议的对象本身
     PyObject *obj;        /* owned reference */
+    // 缓冲区中每个元素的大小
     Py_ssize_t len;
+    // 缓冲区中每个元素的大小
     Py_ssize_t itemsize;  /* This is Py_ssize_t so it can be
                              pointed to by strides in simple case.*/
+    // 缓冲区是否只读，0表示可读写、1表示只读
     int readonly;
+    // 维度，比如shape为(3,4,5)的数组
+    // 那么底层的ndim就是3
     int ndim;
+    // 格式化字符，用于描述缓冲区的元素类型
     char *format;
+    // 等价于numpy中数组的shape
+    // 因此缓冲区永远是一个一维数组，由buf成员指向
+    // 而其他成员则负责描述这个一维数组应该要怎么使用
     Py_ssize_t *shape;
+    // 在某个维度下，从一个元素到下一个元素所需要跳跃的字节数
     Py_ssize_t *strides;
     Py_ssize_t *suboffsets;
     void *internal;

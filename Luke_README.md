@@ -340,17 +340,77 @@ PyLong_Type -> long_as_number -> long_sub -> x_add
 
 ## bytes
 
+实例对象：`PyBytesObject` [跳转](Include\bytesobject.h)
+
+```c
+typedef struct {
+    PyObject_VAR_HEAD
+    Py_hash_t ob_shash;
+    char ob_sval[1];
+} PyBytesObject;
+```
+
+类型对象：`PyBytes_Type` [跳转](Objects\bytesobject.c)
 
 
 
+### bytes内存大小
+
+```
+ob_refcnt: 8字节
+ob_type: 8字节
+ob_size: 8字节
+ob_shash: 8字节
+ob_sval: 1字节 * (ob_size+1)
+```
+
+ 一个空的字节序列，占33个字节 
 
 
 
+### 生命周期
+
+#### 创建对象
 
 
 
+### 行为
+
+#### bytes_as_number
+
+```c
+static PyNumberMethods bytes_as_number = {
+    0,              /*nb_add*/
+    0,              /*nb_subtract*/
+    0,              /*nb_multiply*/
+    bytes_mod,      /*nb_remainder*/
+};
+```
+
+借用 % 运算符实现了格式化
 
 
+
+#### bytes_as_sequence
+
+```c
+static PySequenceMethods bytes_as_sequence = {
+    (lenfunc)bytes_length, /*sq_length*/
+    (binaryfunc)bytes_concat, /*sq_concat*/
+    (ssizeargfunc)bytes_repeat, /*sq_repeat*/
+    (ssizeargfunc)bytes_item, /*sq_item*/
+    0,                  /*sq_slice*/
+    0,                  /*sq_ass_item*/
+    0,                  /*sq_ass_slice*/
+    (objobjproc)bytes_contains /*sq_contains*/
+};
+```
+
+* `sq_length`: 查看序列的长度
+* `sq_concat`: 将两个序列合并为一个
+* `sq_repeat`: 将序列重复多次
+* `sq_item`: 根据索引获取指定位置的字节，返回的是一个整数
+* `sq_contains`: 判断某个序列是不是该序列的子序列，对应Python中的in操作符
 
 
 

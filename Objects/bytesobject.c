@@ -1423,6 +1423,7 @@ bytes_str(PyObject *op)
 static Py_ssize_t
 bytes_length(PyBytesObject *a)
 {
+    // 直接返回 ob_size
     return Py_SIZE(a);
 }
 
@@ -1430,19 +1431,32 @@ bytes_length(PyBytesObject *a)
 static PyObject *
 bytes_concat(PyObject *a, PyObject *b)
 {
+    // 两个局部变量，用于维护缓冲区
     Py_buffer va, vb;
+    // 保存结果
     PyObject *result = NULL;
 
+    // 将缓冲区的长度设置为-1
+    // 可以认为此时缓冲区啥也没有
     va.len = -1;
     vb.len = -1;
+    // 每个bytes对象底层都对应一个缓冲区
+    // 可以通过PyObject_GetBuffer获取
+    // 因此这里是获取a、b的缓冲区，交给va、vb
+    // 获取成功返回0，失败非0
+    // 失败说明至少有一个不是bytes类型
     if (PyObject_GetBuffer(a, &va, PyBUF_SIMPLE) != 0 ||
         PyObject_GetBuffer(b, &vb, PyBUF_SIMPLE) != 0) {
+        // PyExc_TypeError 表示 TypeError
         PyErr_Format(PyExc_TypeError, "can't concat %.100s to %.100s",
                      Py_TYPE(b)->tp_name, Py_TYPE(a)->tp_name);
         goto done;
     }
 
     /* Optimize end cases */
+    /* 优化最终案例 */
+    // 快分支
+    // 如果长度为0 ，那么可以直接返回另一个
     if (va.len == 0 && PyBytes_CheckExact(b)) {
         result = b;
         Py_INCREF(result);
@@ -1454,18 +1468,30 @@ bytes_concat(PyObject *a, PyObject *b)
         goto done;
     }
 
+    // 判断两个字节序列合并之后，长度是否超过限制
     if (va.len > PY_SSIZE_T_MAX - vb.len) {
+        // if (va.len + vb.len > PY_SSIZE_T_MAX) 
+        // 防止溢出
         PyErr_NoMemory();
         goto done;
     }
 
+    // 声明容量PyBytesObject
+    // 这里直接调用Python/C API
     result = PyBytes_FromStringAndSize(NULL, va.len + vb.len);
     if (result != NULL) {
+        // 将缓冲区va里面内容拷贝到result的ob_sval中
+        // 拷贝的长度为va.len
+        // PyBytes_AS_STRING 是一个宏，用于获取PyBytesObject中的ob_sval
         memcpy(PyBytes_AS_STRING(result), va.buf, va.len);
+        // 然后将缓冲区vb里面的内容拷贝到result的ob_sval中
+        // 从va.len开始拷贝，拷贝的长度为vb.len
         memcpy(PyBytes_AS_STRING(result) + va.len, vb.buf, vb.len);
     }
 
   done:
+    // 如果长度不是-1，那么要将缓冲区里面的内容释放掉
+    // 否则可能导致内存泄漏
     if (va.len != -1)
         PyBuffer_Release(&va);
     if (vb.len != -1)
@@ -1486,37 +1512,66 @@ bytes_repeat(PyBytesObject *a, Py_ssize_t n)
     /* watch out for overflows:  the size can overflow int,
      * and the # of bytes needed can overflow size_t
      */
+    // Py_SIZE(a) * n > PY_SSIZE_T_MAX 
+    // 防止溢出
     if (n > 0 && Py_SIZE(a) > PY_SSIZE_T_MAX / n) {
+        // 是否超过最大限制
+        // 超过就直接报错
         PyErr_SetString(PyExc_OverflowError,
             "repeated bytes are too long");
         return NULL;
     }
+    // 计算size
     size = Py_SIZE(a) * n;
+    // 快分支
     if (size == Py_SIZE(a) && PyBytes_CheckExact(a)) {
+        // 如果两者相等，那么证明n=1
+        // 本质上没有变化，因此直接返回本身
+        // 然后多一个引用计数
         Py_INCREF(a);
         return (PyObject *)a;
     }
+    // 类型转化，此时是size_t类型，相当于无符号64位整数
+    // nbytes就是ob_sval中有效字符占的总大小，不包括 \0
     nbytes = (size_t)size;
+    // PyBytesObject_SIZE 是一个宏
+    // 等价于(offsetof(PyBytesObject, ob_sval) + 1)
+    // 计算的是PyBytesObject的ob_sval之前的所有成员的总大小、再加1
+    // 或者理解从第一个成员到ob_sval尘缘之间的偏移量、再加1
+    // 所以nbytes + PyBytesObject_SIZE就是bytes对象所需要的空间
+    // 如果nbytes + PyBytesObject_SIZE 还小于等于 nbytes
+    // 证明长度发生溢出
     if (nbytes + PyBytesObject_SIZE <= nbytes) {
         PyErr_SetString(PyExc_OverflowError,
             "repeated bytes are too long");
         return NULL;
     }
+    // 申请空间，大小为 PyBytesObject_SIZE + nbytes
     op = (PyBytesObject *)PyObject_MALLOC(PyBytesObject_SIZE + nbytes);
     if (op == NULL)
         return PyErr_NoMemory();
+    // PyObject_INIT_VAR是一个宏，设置ob_type和ob_size
     (void)PyObject_INIT_VAR(op, &PyBytes_Type, size);
+    // 设置ob_shash为-1
     op->ob_shash = -1;
+    // 将ob_sval最后一位设置为'\0'
     op->ob_sval[size] = '\0';
     if (Py_SIZE(a) == 1 && n > 0) {
+        // 显然这里是在a对应的bytes对象长度为1时，所走的逻辑
+        // 也就是重复的bytes对象的长度为1时，会走这个快分支
+        // 直接将op->ob_sval里面n个元素设置为a->ob_sval[0]即可
         memset(op->ob_sval, a->ob_sval[0] , n);
         return (PyObject *) op;
     }
     i = 0;
+    // 否则将 a->ob_sval 拷贝到 op->ob_sval 中
+    // 拷贝n次，因为size = PySIZE(a) * n
+    // 这里先拷贝了一次
     if (i < size) {
         memcpy(op->ob_sval, a->ob_sval, Py_SIZE(a));
         i = Py_SIZE(a);
     }
+    // 然后拷贝 n-1 次
     while (i < size) {
         j = (i <= size-i)  ?  i  :  size-i;
         memcpy(op->ob_sval+i, op->ob_sval, j);
@@ -1528,6 +1583,8 @@ bytes_repeat(PyBytesObject *a, Py_ssize_t n)
 static int
 bytes_contains(PyObject *self, PyObject *arg)
 {
+    // 实现 b"abc" in b"abcdef"
+    //                 传入了 self->ob_sval , self->ob_size , arg
     return _Py_bytes_contains(PyBytes_AS_STRING(self), PyBytes_GET_SIZE(self), arg);
 }
 
@@ -1650,65 +1707,95 @@ bytes_hash(PyBytesObject *a)
 static PyObject*
 bytes_subscript(PyBytesObject* self, PyObject* item)
 {
+    // 切片操作
+    // 参数是self和item，那么在Python的层面上就类似于self[item]
+    // 检测item，看它是不是一个整型
     if (PyIndex_Check(item)) {
+        // 如果是，转成ssize_t
         Py_ssize_t i = PyNumber_AsSsize_t(item, PyExc_IndexError);
         if (i == -1 && PyErr_Occurred())
             return NULL;
+        // 如果i小于0，那么将i加上序列的长度，得到正数索引
         if (i < 0)
             i += PyBytes_GET_SIZE(self);
+        // 如果还是小于0，或者本身大于等于序列的长度
+        // 那么抛出IndexError
         if (i < 0 || i >= PyBytes_GET_SIZE(self)) {
             PyErr_SetString(PyExc_IndexError,
                             "index out of range");
             return NULL;
         }
+        // 获取之后，将其转成整数返回
         return PyLong_FromLong((unsigned char)self->ob_sval[i]);
     }
     else if (PySlice_Check(item)) {
+        // 起始位置，终止位置，步长，拷贝的字节个数，循环变量
         Py_ssize_t start, stop, step, slicelength, i;
+        // 拷贝的字节所在的位置
         size_t cur;
+        // 两个缓存
         char* source_buf;
         char* result_buf;
+        // 返回的结果
         PyObject* result;
 
+        // 将item拆包，得到起始位置，终止位置，步长
         if (PySlice_Unpack(item, &start, &stop, &step) < 0) {
             return NULL;
         }
+        // 根据start，stop，step计算拷贝的字节个数
         slicelength = PySlice_AdjustIndices(PyBytes_GET_SIZE(self), &start,
                                             &stop, step);
 
+        // slicelength小于等于0的话，直接返回空的字节序列，比如val[3:2]
         if (slicelength <= 0) {
             return PyBytes_FromStringAndSize("", 0);
         }
+        // 如果起始位置为0，步长为1，且拷贝的字节个数等于字节序列的长度
+        // 说明前后没有变化
         else if (start == 0 && step == 1 &&
                  slicelength == PyBytes_GET_SIZE(self) &&
                  PyBytes_CheckExact(self)) {
+            // 那么增加引用计数，直接返回
+            // 快分支
             Py_INCREF(self);
             return (PyObject *)self;
         }
         else if (step == 1) {
+            // 如果步长是1，那么从start开始拷贝
+            // 拷贝slicelength个字节
             return PyBytes_FromStringAndSize(
                 PyBytes_AS_STRING(self) + start,
                 slicelength);
         }
         else {
+            // 走到这里，说明步长不是1，只能一个一个拷贝
             source_buf = PyBytes_AS_STRING(self);
+            // 创建PyBytesObject对象，空间为slicelength
             result = PyBytes_FromStringAndSize(NULL, slicelength);
             if (result == NULL)
                 return NULL;
 
+            // 拿到内部的ob_sval
             result_buf = PyBytes_AS_STRING(result);
+            // 从start开始，然后逐个字节拷贝过去
+            // 依旧循环slicelength次
+            // 通过cur记录拷贝的位置，然后每次循环都加上步长step
             for (cur = start, i = 0; i < slicelength;
                  cur += step, i++) {
                 result_buf[i] = source_buf[cur];
             }
 
+            // 返回
             return result;
         }
     }
+    // item要么是整数、要么是切片，走到这里说明不满足条件
     else {
         PyErr_Format(PyExc_TypeError,
                      "byte indices must be integers or slices, not %.200s",
                      Py_TYPE(item)->tp_name);
+        // 返回空，因为出现异常了
         return NULL;
     }
 }

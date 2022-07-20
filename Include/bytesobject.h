@@ -30,7 +30,11 @@ functions should be applied to nil objects.
 #ifndef Py_LIMITED_API
 typedef struct {
     PyObject_VAR_HEAD
+    // 字节序列的哈希值(提前计算好)，因为bytes不可变，所以哈希值不变
     Py_hash_t ob_shash;
+    // 变长数组，通过字符数组存储
+    // 会多申请一个空间，用于存储\0，因为C中通过\0来表示一个字符数组的结束
+    // 但是ob_size的时候不包括\0
     char ob_sval[1];
 
     /* Invariants:

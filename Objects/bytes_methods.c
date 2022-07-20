@@ -695,23 +695,41 @@ _Py_bytes_count(const char *str, Py_ssize_t len, PyObject *args)
 int
 _Py_bytes_contains(const char *str, Py_ssize_t len, PyObject *arg)
 {
+    // 将arg转成整型
+    // 但是显然只有 arg->ob_sval 的有效字节为1时才可以这么做
     Py_ssize_t ival = PyNumber_AsSsize_t(arg, NULL);
+    // 如果没有异常发生，那么PyErr_Occurred()会返回NULL
+    // 有异常发生，那么PyErr_Occurred()会返回非NULL指针
+    // 注意整个异常会表现在Python层面，但是C里面程序依旧是正常执行的
+    // 并且 PYNumber_AsSsize_t在转换失败时会返回-1
     if (ival == -1 && PyErr_Occurred()) {
+        // 当这个条件满足时，证明转化失败了
+        // 以为这 arg->ob_sval 的有效字节数大于1
+        // 缓冲区
         Py_buffer varg;
+        // 遍历位置
         Py_ssize_t pos;
+        // 这里将异常清空
         PyErr_Clear();
+        // 拿到缓冲区
         if (PyObject_GetBuffer(arg, &varg, PyBUF_SIMPLE) != 0)
             return -1;
+        // 调用stringlib_find找到其位置，里面也是使用了循环
         pos = stringlib_find(str, len,
                              varg.buf, varg.len, 0);
+        // 释放缓冲区
         PyBuffer_Release(&varg);
+        // 如果pos大于0，说明确实找到了
         return pos >= 0;
     }
+    // 否则说明只有一个字节，但是字节不合法
     if (ival < 0 || ival >= 256) {
         PyErr_SetString(PyExc_ValueError, "byte must be in range(0, 256)");
         return -1;
     }
 
+    // 走到这里说明是单个字节，并且合法
+    // 那么直接调用C中的memchr去寻找即可
     return memchr(str, (int) ival, len) != NULL;
 }
 
