@@ -414,6 +414,32 @@ static PySequenceMethods bytes_as_sequence = {
 
 
 
+### 效率问题
+
+Python的不可变对象在运算时，处理方式是再创建一个新的。
+
+所以三个bytes对象a、b、c在相加时，那么会先根据a+b创建**临时对象**，然后再根据**临时对象**+c创建新的对象，最后返回指针
+
+效率非常低下，因为涉及大量临时对象的创建和销毁。
+
+官方推荐的做法，使用`join`方法
+
+
+
+### 字节序列缓存池
+
+256个单字节序列
+
+实现：`Objects\bytesobject.c` [跳转](Objects\bytesobject.c)
+
+```c
+static PyBytesObject *characters[UCHAR_MAX + 1];
+```
+
+```
+PyBytes_FromStringAndSize
+```
+
 
 
 

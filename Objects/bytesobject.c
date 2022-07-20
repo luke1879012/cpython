@@ -22,6 +22,7 @@ class bytes "PyBytesObject *" "&PyBytes_Type"
 Py_ssize_t _Py_null_strings, _Py_one_strings;
 #endif
 
+// 字节序列缓存池
 static PyBytesObject *characters[UCHAR_MAX + 1];
 static PyBytesObject *nullstring;
 
@@ -101,29 +102,37 @@ _PyBytes_FromSize(Py_ssize_t size, int use_calloc)
 PyObject *
 PyBytes_FromStringAndSize(const char *str, Py_ssize_t size)
 {
+    // 结果
     PyBytesObject *op;
     if (size < 0) {
+        // 显然size不可以小于0
         PyErr_SetString(PyExc_SystemError,
             "Negative size passed to PyBytes_FromStringAndSize");
         return NULL;
     }
+    // 如果size为1，表明创建的是单字节对象
+    // 当然str不可能为NULL，而且获取到的字节必须在characters里面
     if (size == 1 && str != NULL &&
         (op = characters[*str & UCHAR_MAX]) != NULL)
     {
 #ifdef COUNT_ALLOCS
         _Py_one_strings++;
 #endif
+        // 增加引用计数，返回指针
         Py_INCREF(op);
         return (PyObject *)op;
     }
 
+    // 否则的话，创建新的PyBytesObject，此时是个空
     op = (PyBytesObject *)_PyBytes_FromSize(size, 0);
     if (op == NULL)
         return NULL;
     if (str == NULL)
         return (PyObject *) op;
 
+    // 不管size是多少，都直接拷贝即可
     memcpy(op->ob_sval, str, size);
+    // 但是size是1的话，除了拷贝还会放到缓存池characters中
     /* share short strings */
     if (size == 1) {
         characters[*str & UCHAR_MAX] = op;
