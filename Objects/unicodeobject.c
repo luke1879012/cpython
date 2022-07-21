@@ -1862,6 +1862,7 @@ unicode_dealloc(PyObject *unicode)
         break;
 
     case SSTATE_INTERNED_IMMORTAL:
+        // 据说这个状态与Python解释器共存亡
         Py_FatalError("Immortal interned string died.");
         /* fall through */
 
@@ -15314,10 +15315,13 @@ PyUnicode_InternInPlace(PyObject **p)
 #endif
     /* If it's a subclass, we don't really know what putting
        it in the interned dict might do. */
+    // 类型检测，必须是PyUnicodeObject
     if (!PyUnicode_CheckExact(s))
         return;
+    // 检测interned标识位，判断是否开启interned机制
     if (PyUnicode_CHECK_INTERNED(s))
         return;
+    // 创建字典，用于存储开启intern机制的字符串
     if (interned == NULL) {
         interned = PyDict_New();
         if (interned == NULL) {
@@ -15325,6 +15329,7 @@ PyUnicode_InternInPlace(PyObject **p)
             return;
         }
     }
+    // 对应字典的setdefault方法
     t = PyDict_SetDefault(interned, s, s);
     if (t == NULL) {
         PyErr_Clear();
@@ -15338,6 +15343,7 @@ PyUnicode_InternInPlace(PyObject **p)
     /* The two references in interned are not counted by refcnt.
        The deallocator will take care of this */
     Py_REFCNT(s) -= 2;
+    // 只能创建SSTATE_INTERNED_MORTAL的PyUnicodeObject对象
     _PyUnicode_STATE(s).interned = SSTATE_INTERNED_MORTAL;
 }
 
@@ -15345,6 +15351,7 @@ void
 PyUnicode_InternImmortal(PyObject **p)
 {
     PyUnicode_InternInPlace(p);
+    // 强制修改interned状态
     if (PyUnicode_CHECK_INTERNED(*p) != SSTATE_INTERNED_IMMORTAL) {
         _PyUnicode_STATE(*p).interned = SSTATE_INTERNED_IMMORTAL;
         Py_INCREF(*p);
