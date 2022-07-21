@@ -3454,9 +3454,12 @@ PyUnicode_Encode(const Py_UNICODE *s,
 {
     PyObject *v, *unicode;
 
+    // 基于宽字符创建PyUnicodeObject
     unicode = PyUnicode_FromWideChar(s, size);
     if (unicode == NULL)
         return NULL;
+    // 编码成bytes对象，指定encoding和errors
+    // 这个Python里面的参数是一致的
     v = PyUnicode_AsEncodedString(unicode, encoding, errors);
     Py_DECREF(unicode);
     return v;
@@ -3602,6 +3605,7 @@ PyUnicode_AsEncodedString(PyObject *unicode,
         return NULL;
     }
 
+    // 默认调用utf-8
     if (encoding == NULL) {
         return _PyUnicode_AsUTF8String(unicode, errors);
     }
@@ -5327,26 +5331,34 @@ static PyObject *
 unicode_encode_utf8(PyObject *unicode, _Py_error_handler error_handler,
                     const char *errors)
 {
+    // kind的类型，表示使用哪一种编码
     enum PyUnicode_Kind kind;
     void *data;
     Py_ssize_t size;
 
+    // unicode必须是一个字符串
     if (!PyUnicode_Check(unicode)) {
         PyErr_BadArgument();
         return NULL;
     }
 
+    // 必须初始化完毕
     if (PyUnicode_READY(unicode) == -1)
         return NULL;
 
+    // 如果unicode是PyASCIIObject
+    // 那么直接获取每个字符的ASCII码，创建bytes对象
     if (PyUnicode_UTF8(unicode))
         return PyBytes_FromStringAndSize(PyUnicode_UTF8(unicode),
                                          PyUnicode_UTF8_LENGTH(unicode));
 
+    // 如果不是Latin-1编码，那么获取kind、data、size
     kind = PyUnicode_KIND(unicode);
     data = PyUnicode_DATA(unicode);
     size = PyUnicode_GET_LENGTH(unicode);
 
+    // 判断kind是哪一种
+    // 最终得到的都是bytes对象
     switch (kind) {
     default:
         Py_UNREACHABLE();
@@ -11289,46 +11301,62 @@ PyUnicode_Contains(PyObject *str, PyObject *substr)
 PyObject *
 PyUnicode_Concat(PyObject *left, PyObject *right)
 {
+    // 相加之后的结果
     PyObject *result;
     Py_UCS4 maxchar, maxchar2;
     Py_ssize_t left_len, right_len, new_len;
 
+    // 检测是否是PyUnicodeObject
     if (ensure_unicode(left) < 0)
         return NULL;
 
     if (!PyUnicode_Check(right)) {
+        // 如果右边不是str对象的话，报错
         PyErr_Format(PyExc_TypeError,
                      "can only concatenate str (not \"%.200s\") to str",
                      right->ob_type->tp_name);
         return NULL;
     }
+    // 属性的初始化
+    // Python的内部检测，不用管
     if (PyUnicode_READY(right) < 0)
         return NULL;
 
     /* Shortcuts */
+    /* 快捷方式 */
+    // 如果其中一方为空的话，那么直接返回另一方即可
     if (left == unicode_empty)
         return PyUnicode_FromObject(right);
     if (right == unicode_empty)
         return PyUnicode_FromObject(left);
 
+    // 计算left的长度和right的长度
     left_len = PyUnicode_GET_LENGTH(left);
     right_len = PyUnicode_GET_LENGTH(right);
+    // 如果相加超过PY_SSIZE_T_MAX，那么会报错
     if (left_len > PY_SSIZE_T_MAX - right_len) {
         PyErr_SetString(PyExc_OverflowError,
                         "strings are too large to concat");
         return NULL;
     }
+    // 计算新的长度
     new_len = left_len + right_len;
 
+    // 计算存储单元占用的字节数
     maxchar = PyUnicode_MAX_CHAR_VALUE(left);
     maxchar2 = PyUnicode_MAX_CHAR_VALUE(right);
+    // 取大的哪一方，比如一个是UCS2，一个是UCS4，选UCS4
     maxchar = Py_MAX(maxchar, maxchar2);
 
+    // 通过PyUnicode_New申请能够容纳new_len个宽字符的PyUnicodeObject
+    // 并且字符的存储单元是大的那一方
     /* Concat the two Unicode strings */
     result = PyUnicode_New(new_len, maxchar);
     if (result == NULL)
         return NULL;
+    // 将left拷进去
     _PyUnicode_FastCopyCharacters(result, 0, left, 0, left_len);
+    // 将right拷进去
     _PyUnicode_FastCopyCharacters(result, left_len, right, 0, right_len);
     assert(_PyUnicode_CheckConsistency(result, 1));
     return result;

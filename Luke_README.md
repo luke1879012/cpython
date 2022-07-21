@@ -623,11 +623,13 @@ PyUnicode_FromStringAndSize
 
 
 
+#### 行为
 
+[跳转](Objects\unicodeobject.c)
 
+`unicode_as_number`
 
-
-
+`unicode_as_sequence`
 
 
 
