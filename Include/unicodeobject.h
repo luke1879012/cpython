@@ -99,8 +99,11 @@ Copyright (c) Corporation for National Research Initiatives.
 
 /* Py_UCS4 and Py_UCS2 are typedefs for the respective
    unicode representations. */
+// 4字节使用的是无符号32位整型
 typedef uint32_t Py_UCS4;
+// 2字节使用的是无符号16位整型
 typedef uint16_t Py_UCS2;
+// Latin-1是无符号8位整型
 typedef uint8_t Py_UCS1;
 
 #ifdef __cplusplus

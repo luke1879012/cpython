@@ -160,7 +160,9 @@ typedef struct {
        See also _PyUnicode_CheckConsistency().
     */
     PyObject_HEAD
+    // 字符串长度
     Py_ssize_t length;          /* Number of code points in the string */
+    // 字符串的哈希值
     Py_hash_t hash;             /* Hash value; -1 if not set */
     struct {
         /*
@@ -218,6 +220,7 @@ typedef struct {
            4 bytes (see issue #19537 on m68k). */
         unsigned int :24;
     } state;
+    // 指向由宽字符组成的字符数组
     wchar_t *wstr;              /* wchar_t representation (null-terminated) */
 } PyASCIIObject;
 
@@ -226,9 +229,12 @@ typedef struct {
    immediately follow the structure. */
 typedef struct {
     PyASCIIObject _base;
+    // 字符串的utf-8编码长度
     Py_ssize_t utf8_length;     /* Number of bytes in utf8, excluding the
                                  * terminating \0. */
+    // 字符串使用utf-8编码的结果，这里缓存起来从而避免重复的编码运算
     char *utf8;                 /* UTF-8 representation (null-terminated) */
+    // 宽字符的数量
     Py_ssize_t wstr_length;     /* Number of code points in wstr, possible
                                  * surrogates count as two code points. */
 } PyCompactUnicodeObject;
@@ -317,6 +323,7 @@ PyAPI_FUNC(int) _PyUnicode_CheckConsistency(
 #define PyUnicode_IS_COMPACT_ASCII(op)                 \
     (((PyASCIIObject*)op)->state.ascii && PyUnicode_IS_COMPACT(op))
 
+// 使用的字节大小
 enum PyUnicode_Kind {
 /* String contains only wstr byte characters.  This is only possible
    when the string was created with a legacy API and _PyUnicode_Ready()

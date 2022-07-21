@@ -49,6 +49,8 @@ frozenset -> PyFrozenSet_Type (PyTypeObject结构体实例)
 使用`sys.getsizeof`获取，Python中对象的大小，是根据底层的结构体计算出来的
 * [float](#float内存大小)
 * [int](#int内存大小)
+* [bytes](#bytes内存大小)
+* [str](#str内存大小)
 
 
 
@@ -439,6 +441,180 @@ static PyBytesObject *characters[UCHAR_MAX + 1];
 ```
 PyBytes_FromStringAndSize
 ```
+
+
+
+## str
+
+实例对象：`PyUnicodeObject` [跳转](Include\cpython\unicodeobject.h)
+
+```c
+typedef struct {
+    PyObject_HEAD
+    Py_ssize_t length;          
+    Py_hash_t hash;            
+    struct {
+        unsigned int interned:2;
+        unsigned int kind:3;
+        unsigned int compact:1;
+        unsigned int ascii:1;
+        unsigned int ready:1;
+        unsigned int :24;
+    } state;
+    wchar_t *wstr;              
+} PyASCIIObject;
+
+typedef struct {
+    PyASCIIObject _base;
+    Py_ssize_t utf8_length;     
+    char *utf8;                
+    Py_ssize_t wstr_length; 
+} PyCompactUnicodeObject;
+
+typedef struct {
+    PyCompactUnicodeObject _base;
+    union {
+        void *any;
+        Py_UCS1 *latin1;
+        Py_UCS2 *ucs2;
+        Py_UCS4 *ucs4;
+    } data;                   
+} PyUnicodeObject;
+
+```
+
+​    标志位：
+
+* `interned`：是否被intern机制维护
+* `kind`：类型，用于区分底层存储单元的大小。如果是Latin1编码，那么就是1；UCS2是2；UCS4是4；
+* `compact`：内存分配方式，对象与文本缓冲区是否分离
+* `ascii`：字符串是否是纯ASCII字符串，如果是则为1，不是为0。注意：只有对应的ASCII码为0~127之间的才是ASCII字符
+
+
+
+类型对象：`PyUnicode_Type` [跳转](Objects\unicodeobject.c)
+
+
+
+### unicode的三种编码
+
+为了减少内存消耗并提高性能，Python使用了三种编码方式表示Unicode:
+
+* `Latin-1` 编码：每个字符一字节
+* `UCS2 `编码： 每个字符两个字节
+* `UCS4 `编码： 每个字符四个字节
+
+
+
+### 为什么不使用utf-8编码
+
+utf-8可变，字符占的大小不同，有些占1字节，有些占3字节
+
+采用utf-8的话，就无法以`O(1)`的时间复杂度去准确地定位字符
+
+
+
+### 三种编码，该使用哪一种？
+
+Python创建字符串的时候，会先扫描，尝试使用占字节数最少的编码进行存储
+
+一旦改变编码，字符串中的所有字符都会使用同样的编码，因为它们不具备可变长功能
+
+
+
+### 各个结构体
+
+|              |     maxchar < 2**7     |      maxchar < 2**8      |     maxchar < 2**16      |     maxchar < 2**32      |
+| :----------: | :--------------------: | :----------------------: | :----------------------: | :----------------------: |
+|     kind     | `PyUnicode_1BYTE_KIND` |  `PyUnicode_1BYTE_KIND`  |  `PyUnicode_2BYTE_KIND`  |  `PyUnicode_4BYTE_KIND`  |
+|    ascii     |           1            |            0             |            0             |            0             |
+| 字符存储单元 |           1            |            1             |            2             |            4             |
+|  底层结构体  |    `PyASCIIObject`     | `PyCompactUnicodeObject` | `PyCompactUnicodeObject` | `PyCompactUnicodeObject` |
+
+
+
+
+
+### str内存大小
+
+Python的每一个字符串都需要额外占用49-80字节。因为要存储一些额外信息，比如：公共的头部、哈希、长度、字节长度、编码类型等等
+
+* `Latin-1`：额外占用49字节 + 每个字符一字节
+* `UCS2`：额外占用74字节 + 每个字符两个字节
+* `UCS4`：额外占用76字节 + 每个字符四个字节
+
+
+
+#### PyASCIIObject
+
+```
+ob_refcnt: 8字节
+ob_type: 8字节
+length: 8字节
+hash: 8字节
+state: 4字节
+	interned: 2比特
+	kind: 3比特
+	compact: 1比特
+	ascii: 1比特
+	ready: 1比特
+	     : 24比特
+空洞: 4字节(8字节对齐)
+wstr: 8字节
+```
+
+总共是48字节，字符数组内部有一个`\0`表示结尾，所以要加1，为49字节
+
+
+
+#### PyCompactUnicodeObject
+
+```
+_base: 48字节(PyASCIIObject)
+utf8_length: 8字节
+utf8: 8字节
+wstr_length: 8字节
+```
+
+总共是72字节，加上`\0`结果，所以根据类型：
+
+* 如果128<=maxchar<=256，对应则是73字节
+* 如果是UCS2，对应则是74字节
+* 如果是UCS4，对应则是76字节
+
+
+
+### kind类型
+
+####  **PyUnicode_1BYTE_KIND** 
+
+```
+PyASCIIObject -> state -> kind == 1
+```
+
+
+
+####  **PyUnicode_2BYTE_KIND**
+
+```
+PyASCIIObject -> state -> kind == 2
+```
+
+
+
+####  **PyUnicode_4BYTE_KIND** 
+
+```
+PyASCIIObject -> state -> kind == 4
+```
+
+
+
+
+
+
+
+
 
 
 
