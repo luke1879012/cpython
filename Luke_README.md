@@ -661,7 +661,40 @@ Python的做法是在内部维护一个全局字典，所有开启intern机制�
 
 
 
+## list
 
+实例对象：` PyListObject ` [跳转](Include\listobject.h)
+
+```c
+typedef struct {
+    PyObject_VAR_HEAD
+    PyObject **ob_item;
+    Py_ssize_t allocated;
+} PyListObject;
+```
+
+- ob_item：一个二级指针，指向PyObject *类型的指针数组，这个指针数组保存的便是对象的指针，而操作底层数组都是通过ob_item来进行操作的
+- allocated：最大容量（`lst.__sizeof__()`查看）
+
+
+
+类型对象：`PyList_Type` [跳转](Objects\listobject.c)
+
+
+
+### list内存大小
+
+底层对应的PyListObject实例的大小其实是不变的，因为指针数组没有存在PyListObject里面。但是Python在计算内存大小的时候是会将这个指针数组也算进去的，所以Python中列表的大小是可变的。 
+
+```
+ob_refcnt: 8字节
+ob_type: 8字节
+ob_size: 8字节
+ob_item: 8字节
+allocated: 8字节
+```
+
+总共为40字节，因为ob_item的指针数组也要算进去，所以为 40+8*allocated
 
 
 

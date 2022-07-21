@@ -35,16 +35,26 @@ class list "PyListObject *" "&PyList_Type"
 static int
 list_resize(PyListObject *self, Py_ssize_t newsize)
 {
+    // 参数self就是列表，newsize指的元素在添加之后的ob_size
+    // 这个函数不仅可以扩容，也可以缩容
+
+    // 二级指针，用来指向指针数组的
     PyObject **items;
+    // 新的容量，以及对应的内存大小
     size_t new_allocated, num_allocated_bytes;
+    // 获取原来的容量
     Py_ssize_t allocated = self->allocated;
 
     /* Bypass realloc() when a previous overallocation is large enough
        to accommodate the newsize.  If the newsize falls lower than half
        the allocated size, then proceed with the realloc() to shrink the list.
     */
+    // 如果newsize达到了容量的一半，但还没有超过容量
+    // 那么意味着newsize、或者新的ob_size和容量是匹配的
+    // 所以不会变化
     if (allocated >= newsize && newsize >= (allocated >> 1)) {
         assert(self->ob_item != NULL || newsize == 0);
+        // 只需要将列表的ob_size设置为newsize即可
         Py_SIZE(self) = newsize;
         return 0;
     }
@@ -58,22 +68,34 @@ list_resize(PyListObject *self, Py_ssize_t newsize)
      * Note: new_allocated won't overflow because the largest possible value
      *       is PY_SSIZE_T_MAX * (9 / 8) + 6 which always fits in a size_t.
      */
+    // 走到这里说明容量和ob_size不匹配了，所以要进行扩容或者缩容
+    // 因此要申请新的底层数组，那么长度是多少呢？
     new_allocated = (size_t)newsize + (newsize >> 3) + (newsize < 9 ? 3 : 6);
+    // 显然容量不可能无限大，是有范围的
+    // 当然这个范围基本上是达不到的
     if (new_allocated > (size_t)PY_SSIZE_T_MAX / sizeof(PyObject *)) {
         PyErr_NoMemory();
         return -1;
     }
 
+    // 如果newsize为0，那么容量也会变成0
     if (newsize == 0)
         new_allocated = 0;
+    // 我们说数组中存放的都是PyObject *，所以要计算内存
     num_allocated_bytes = new_allocated * sizeof(PyObject *);
+    // 申请相应大小的内存，将其指针交给items
     items = (PyObject **)PyMem_Realloc(self->ob_item, num_allocated_bytes);
     if (items == NULL) {
+        // 如果items是NULL，代表申请失败
         PyErr_NoMemory();
         return -1;
     }
+    // 然后让ob_item=items，也就是指向新的数组
+    // 此时列表就发生了扩容或缩容
     self->ob_item = items;
+    // 将ob_size设置为newsize，因为它维护列表内部元素的个数
     Py_SIZE(self) = newsize;
+    // 设置新的容量
     self->allocated = new_allocated;
     return 0;
 }
