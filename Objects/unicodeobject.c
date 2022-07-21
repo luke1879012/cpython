@@ -2156,25 +2156,31 @@ PyUnicode_FromWideChar(const wchar_t *u, Py_ssize_t size)
 PyObject *
 PyUnicode_FromStringAndSize(const char *u, Py_ssize_t size)
 {
+    // 可以多指定一个长度
     if (size < 0) {
         PyErr_SetString(PyExc_SystemError,
                         "Negative size passed to PyUnicode_FromStringAndSize");
         return NULL;
     }
+    // 如果C的char *不为NULL，那么还是调用函数创建
     if (u != NULL)
         return PyUnicode_DecodeUTF8Stateful(u, size, NULL, NULL);
     else
+        // 直接调用_PyUnicode_New申请对应大小的空间
         return (PyObject *)_PyUnicode_New(size);
 }
 
 PyObject *
 PyUnicode_FromString(const char *u)
 {
+    // 计算C字符串的长度
     size_t size = strlen(u);
+    // 超过了PY_SSIZE_T_MAX，报错
     if (size > PY_SSIZE_T_MAX) {
         PyErr_SetString(PyExc_OverflowError, "input too long");
         return NULL;
     }
+    // 调用该函数进行创建
     return PyUnicode_DecodeUTF8Stateful(u, (Py_ssize_t)size, NULL, NULL);
 }
 
@@ -4912,12 +4918,17 @@ unicode_decode_utf8(const char *s, Py_ssize_t size,
     if (_PyUnicodeWriter_Prepare(&writer, writer.min_length, 127) == -1)
         goto onError;
 
+    // 快分支
+    // 直接使用 ascii_decode 进行解码
     writer.pos = ascii_decode(s, end, writer.data);
     s += writer.pos;
+    // 逐个字符进行扫描
     while (s < end) {
         Py_UCS4 ch;
         int kind = writer.kind;
 
+        // 判断kind到底是哪一种
+        // 不同的kind执行不同的函数
         if (kind == PyUnicode_1BYTE_KIND) {
             if (PyUnicode_IS_ASCII(writer.buffer))
                 ch = asciilib_utf8_decode(&s, end, writer.data, &writer.pos);

@@ -610,6 +610,17 @@ PyASCIIObject -> state -> kind == 4
 
 
 
+### 生命周期
+
+#### 创建对象
+
+Python/C API:
+
+```
+PyUnicode_FromString -> PyUnicode_DecodeUTF8Stateful -> unicode_decode_utf8
+PyUnicode_FromStringAndSize
+```
+
 
 
 
