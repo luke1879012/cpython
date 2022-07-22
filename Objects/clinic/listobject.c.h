@@ -264,6 +264,7 @@ list_index(PyListObject *self, PyObject *const *args, Py_ssize_t nargs)
     Py_ssize_t start = 0;
     Py_ssize_t stop = PY_SSIZE_T_MAX;
 
+    // 一堆检查操作
     if (!_PyArg_CheckPositional("index", nargs, 1, 3)) {
         goto exit;
     }
@@ -281,6 +282,7 @@ list_index(PyListObject *self, PyObject *const *args, Py_ssize_t nargs)
         goto exit;
     }
 skip_optional:
+    // 核心函数
     return_value = list_index_impl(self, value, start, stop);
 
 exit:

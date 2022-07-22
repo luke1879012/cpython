@@ -716,6 +716,9 @@ do_richcompare(PyObject *v, PyObject *w, int op)
     PyObject *res;
     int checked_reverse_op = 0;
 
+    // todo: 为啥呢？没理解, 盲猜是快分支吧
+    // v 和 w 的类型不同，并且w是v的子类，并且w的__eq__函数存在
+    // 调用 w.__eq__
     if (v->ob_type != w->ob_type &&
         PyType_IsSubtype(w->ob_type, v->ob_type) &&
         (f = w->ob_type->tp_richcompare) != NULL) {
@@ -725,12 +728,14 @@ do_richcompare(PyObject *v, PyObject *w, int op)
             return res;
         Py_DECREF(res);
     }
+    // 调用 v.__eq__ 
     if ((f = v->ob_type->tp_richcompare) != NULL) {
         res = (*f)(v, w, op);
         if (res != Py_NotImplemented)
             return res;
         Py_DECREF(res);
     }
+    // 调用 w.__eq__
     if (!checked_reverse_op && (f = w->ob_type->tp_richcompare) != NULL) {
         res = (*f)(w, v, _Py_SwappedOp[op]);
         if (res != Py_NotImplemented)
@@ -766,6 +771,7 @@ PyObject_RichCompare(PyObject *v, PyObject *w, int op)
 {
     PyObject *res;
 
+    // 检查输入信息
     assert(Py_LT <= op && op <= Py_GE);
     if (v == NULL || w == NULL) {
         if (!PyErr_Occurred())
@@ -774,6 +780,7 @@ PyObject_RichCompare(PyObject *v, PyObject *w, int op)
     }
     if (Py_EnterRecursiveCall(" in comparison"))
         return NULL;
+    // 还是调用这个
     res = do_richcompare(v, w, op);
     Py_LeaveRecursiveCall();
     return res;
@@ -789,6 +796,7 @@ PyObject_RichCompareBool(PyObject *v, PyObject *w, int op)
 
     /* Quick result when objects are the same.
        Guarantees that identity implies equality. */
+    // 先比较两个对象的地址
     if (v == w) {
         if (op == Py_EQ)
             return 1;
@@ -796,6 +804,7 @@ PyObject_RichCompareBool(PyObject *v, PyObject *w, int op)
             return 0;
     }
 
+    // 调用PyObject_RichCompare
     res = PyObject_RichCompare(v, w, op);
     if (res == NULL)
         return -1;

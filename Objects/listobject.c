@@ -1160,6 +1160,7 @@ list_pop_impl(PyListObject *self, Py_ssize_t index)
 static void
 reverse_slice(PyObject **lo, PyObject **hi)
 {
+    // 双指针，两两交换
     assert(lo && hi);
 
     --hi;
@@ -2599,7 +2600,12 @@ static PyObject *
 list_reverse_impl(PyListObject *self)
 /*[clinic end generated code: output=482544fc451abea9 input=eefd4c3ae1bc9887]*/
 {
+    // 如果列表长度不大于1的话
+    // 那么什么也不做，直接返回None即可
     if (Py_SIZE(self) > 1)
+        // 大于1的话，执行reverse_slice，传递了两个参数
+        // 第一个参数显然是底层数组首元素的地址
+        // 第二个参数则是底层数组中索引为ob_size的元素的地址
         reverse_slice(self->ob_item, self->ob_item + Py_SIZE(self));
     Py_RETURN_NONE;
 }
@@ -2648,26 +2654,40 @@ list_index_impl(PyListObject *self, PyObject *value, Py_ssize_t start,
 {
     Py_ssize_t i;
 
+    // 如果start<0，则加上长度
     if (start < 0) {
         start += Py_SIZE(self);
+        // 还小于0，那么等于0
         if (start < 0)
             start = 0;
     }
+    // 如果stop<0，则加上长度
     if (stop < 0) {
         stop += Py_SIZE(self);
+        // 还小于0，那么等于0
         if (stop < 0)
             stop = 0;
     }
+    // 从start开始循环
     for (i = start; i < stop && i < Py_SIZE(self); i++) {
+        // 获取相应元素
         PyObject *obj = self->ob_item[i];
+        // 增加引用计数
         Py_INCREF(obj);
+        // 进行比较，PyObject_RichCompareBool是比较函数
+        // 接受三个参数: 元素1、元素2、操作(这里是Py_EQ)
+        // 相等返回1，不相等返回0
         int cmp = PyObject_RichCompareBool(obj, value, Py_EQ);
+        // 比较完之后，减少引用计数
         Py_DECREF(obj);
         if (cmp > 0)
+            // 如果相等，返回索引
             return PyLong_FromSsize_t(i);
         else if (cmp < 0)
             return NULL;
     }
+    // 循环走完一圈，发现都没有相等的
+    // 那么报错，提示元素不再列表中
     PyErr_Format(PyExc_ValueError, "%R is not in list", value);
     return NULL;
 }
@@ -2685,23 +2705,31 @@ static PyObject *
 list_count(PyListObject *self, PyObject *value)
 /*[clinic end generated code: output=b1f5d284205ae714 input=3bdc3a5e6f749565]*/
 {
+    // 初始值为0
     Py_ssize_t count = 0;
     Py_ssize_t i;
 
+    // 遍历每一个元素
     for (i = 0; i < Py_SIZE(self); i++) {
+        // 获取元素，和传入的value比较
         PyObject *obj = self->ob_item[i];
+        // 快分支
+        // 如果对象地址相等，count+1，直接下一轮循环
         if (obj == value) {
            count++;
            continue;
         }
+        // 如果地址不相等，试试 a==b 
         Py_INCREF(obj);
         int cmp = PyObject_RichCompareBool(obj, value, Py_EQ);
         Py_DECREF(obj);
+        // 大于0，说明相等
         if (cmp > 0)
             count++;
         else if (cmp < 0)
             return NULL;
     }
+    // 返回count
     return PyLong_FromSsize_t(count);
 }
 
@@ -2723,10 +2751,13 @@ list_remove(PyListObject *self, PyObject *value)
     Py_ssize_t i;
 
     for (i = 0; i < Py_SIZE(self); i++) {
+        // 从头开始遍历，获取元素
         PyObject *obj = self->ob_item[i];
         Py_INCREF(obj);
+        // 比较是否相等
         int cmp = PyObject_RichCompareBool(obj, value, Py_EQ);
         Py_DECREF(obj);
+        // 如果相等，那么进行删除
         if (cmp > 0) {
             if (list_ass_slice(self, i, i+1,
                                (PyObject *)NULL) == 0)
