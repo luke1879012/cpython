@@ -698,6 +698,12 @@ allocated: 8字节
 
 
 
+### 行为
+
+`list_as_sequence` [跳转](Objects\listobject.c)
+
+`list_as_mapping`
+
 
 
 

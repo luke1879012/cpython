@@ -21,6 +21,7 @@ list_insert(PyListObject *self, PyObject *const *args, Py_ssize_t nargs)
     Py_ssize_t index;
     PyObject *object;
 
+    // 校验传入的参数   
     if (!_PyArg_CheckPositional("insert", nargs, 2, 2)) {
         goto exit;
     }
@@ -31,9 +32,12 @@ list_insert(PyListObject *self, PyObject *const *args, Py_ssize_t nargs)
     }
     {
         Py_ssize_t ival = -1;
+        // 获取对应的索引
         PyObject *iobj = PyNumber_Index(args[0]);
         if (iobj != NULL) {
+            // 将 python的整型 转成 int64
             ival = PyLong_AsSsize_t(iobj);
+            // 减少引用，回收对象
             Py_DECREF(iobj);
         }
         if (ival == -1 && PyErr_Occurred()) {
@@ -42,6 +46,7 @@ list_insert(PyListObject *self, PyObject *const *args, Py_ssize_t nargs)
         index = ival;
     }
     object = args[1];
+    // 核心代码
     return_value = list_insert_impl(self, index, object);
 
 exit:
@@ -122,10 +127,12 @@ list_pop(PyListObject *self, PyObject *const *args, Py_ssize_t nargs)
     PyObject *return_value = NULL;
     Py_ssize_t index = -1;
 
+    // 校验参数
     if (!_PyArg_CheckPositional("pop", nargs, 0, 1)) {
         goto exit;
     }
     if (nargs < 1) {
+        // 如果没有参数，说明返回最后一个
         goto skip_optional;
     }
     if (PyFloat_Check(args[0])) {
@@ -135,9 +142,12 @@ list_pop(PyListObject *self, PyObject *const *args, Py_ssize_t nargs)
     }
     {
         Py_ssize_t ival = -1;
+        // 获取对应的索引
         PyObject *iobj = PyNumber_Index(args[0]);
         if (iobj != NULL) {
+            // 将python的整型转成int64
             ival = PyLong_AsSsize_t(iobj);
+            // 减少对象的引用计数，销毁对象
             Py_DECREF(iobj);
         }
         if (ival == -1 && PyErr_Occurred()) {
@@ -146,6 +156,7 @@ list_pop(PyListObject *self, PyObject *const *args, Py_ssize_t nargs)
         index = ival;
     }
 skip_optional:
+    // 调用list_pop_impl，返回索引为 -1 的值
     return_value = list_pop_impl(self, index);
 
 exit:

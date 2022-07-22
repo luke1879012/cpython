@@ -1271,17 +1271,21 @@ PyNumber_Index(PyObject *item)
         return null_error();
     }
 
+    // 如果是整型，增加引用计数，返回
     if (PyLong_Check(item)) {
         Py_INCREF(item);
         return item;
     }
+    // 检查 item->ob_type->tp_as_number->nb_index 是否实现
     if (!PyIndex_Check(item)) {
         PyErr_Format(PyExc_TypeError,
                      "'%.200s' object cannot be interpreted "
                      "as an integer", item->ob_type->tp_name);
         return NULL;
     }
+    // 调用 nb_index 
     result = item->ob_type->tp_as_number->nb_index(item);
+    // 如果result存在就返回
     if (!result || PyLong_CheckExact(result))
         return result;
     if (!PyLong_Check(result)) {

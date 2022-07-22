@@ -225,17 +225,21 @@ PyList_New(Py_ssize_t size)
 static PyObject *
 list_new_prealloc(Py_ssize_t size)
 {
+    // 申请一个空的列表
     PyListObject *op = (PyListObject *) PyList_New(0);
     if (size == 0 || op == NULL) {
         return (PyObject *) op;
     }
     assert(op->ob_item == NULL);
+    // 申请size个空间
     op->ob_item = PyMem_New(PyObject *, size);
     if (op->ob_item == NULL) {
         Py_DECREF(op);
         return PyErr_NoMemory();
     }
+    // 容量赋值为size
     op->allocated = size;
+    // 返回列表
     return (PyObject *) op;
 }
 
@@ -260,6 +264,9 @@ valid_index(Py_ssize_t i, Py_ssize_t limit)
        optimization manual found at:
        https://www.agner.org/optimize/optimizing_cpp.pdf
     */
+    // 因为这里强转到无符号int64
+    // 所以负数会自动加上int64，转成整数
+    // 所以这里的范围就变成了 0 <= i < limit
     return (size_t) i < (size_t) limit;
 }
 
@@ -309,32 +316,51 @@ PyList_SetItem(PyObject *op, Py_ssize_t i,
 static int
 ins1(PyListObject *self, Py_ssize_t where, PyObject *v)
 {
+    // self: 列表本身
+    // where: 索引
+    // v: 插入的值
+
+    // i: 循环变量
+    // n: 当前列表的元素个数
     Py_ssize_t i, n = Py_SIZE(self);
+    // 指向指针数组的二级指针
     PyObject **items;
     if (v == NULL) {
         PyErr_BadInternalCall();
         return -1;
     }
+    // 到达极限，直接报错
     if (n == PY_SSIZE_T_MAX) {
         PyErr_SetString(PyExc_OverflowError,
             "cannot add more objects to list");
         return -1;
     }
 
+    // 调整列表容量
     if (list_resize(self, n+1) < 0)
         return -1;
 
+    // 确定插入点
     if (where < 0) {
+        // 小于0，加上当前元素的个数
         where += n;
         if (where < 0)
+            // 还小于0，直接插在第一个
             where = 0;
     }
+    // 如果超过当前元素个数，则插在尾部
     if (where > n)
         where = n;
+    // 走到这，索引就确定完了，然后是设置元素
+    // 拿到原来的二级指针，指向一个指针数组
     items = self->ob_item;
+    // 从where开始向后遍历，把索引为i的值赋值给索引为i+1
+    // 为 v 腾位置
     for (i = n; --i >= where; )
         items[i+1] = items[i];
+    // 增加 v 的引用计数
     Py_INCREF(v);
+    // 将索引为where的值设置成v
     items[where] = v;
     return 0;
 }
@@ -352,19 +378,27 @@ PyList_Insert(PyObject *op, Py_ssize_t where, PyObject *newitem)
 static int
 app1(PyListObject *self, PyObject *v)
 {
+    // 参数self是列表，v是要添加的元素
+    // 获取列表的长度
     Py_ssize_t n = PyList_GET_SIZE(self);
 
     assert (v != NULL);
+    // 长度到达极限，直接报错
     if (n == PY_SSIZE_T_MAX) {
         PyErr_SetString(PyExc_OverflowError,
             "cannot add more objects to list");
         return -1;
     }
 
+    // 判断是否需要扩容
+    // 更新ob_size
     if (list_resize(self, n+1) < 0)
         return -1;
 
+    // 因为v作为了列表的一个元素，所以其指向的独享的引用计数要加1
     Py_INCREF(v);
+    // 设置元素，原来的列表长度为n，最大索引是n-1
+    // 那么追加的话等于将元素设置在索引为n的地方
     PyList_SET_ITEM(self, n, v);
     return 0;
 }
@@ -489,6 +523,8 @@ list_contains(PyListObject *a, PyObject *el)
 static PyObject *
 list_item(PyListObject *a, Py_ssize_t i)
 {
+    // 检测索引i的合法性
+    // 如果 i > 列表的长度 或 i < 0 ，则报错
     if (!valid_index(i, Py_SIZE(a))) {
         if (indexerr == NULL) {
             indexerr = PyUnicode_FromString(
@@ -499,7 +535,9 @@ list_item(PyListObject *a, Py_ssize_t i)
         PyErr_SetObject(PyExc_IndexError, indexerr);
         return NULL;
     }
+    // 通过ob_item获取第i个元素
     Py_INCREF(a->ob_item[i]);
+    // 返回
     return a->ob_item[i];
 }
 
@@ -509,18 +547,26 @@ list_slice(PyListObject *a, Py_ssize_t ilow, Py_ssize_t ihigh)
     PyListObject *np;
     PyObject **src, **dest;
     Py_ssize_t i, len;
+    // 计算出需要获取的长度
     len = ihigh - ilow;
+    // 创建出容量为len的列表
     np = (PyListObject *) list_new_prealloc(len);
     if (np == NULL)
         return NULL;
 
+    // 定位到第一个位置
     src = a->ob_item + ilow;
+    // 获取新列表的ob_item
     dest = np->ob_item;
     for (i = 0; i < len; i++) {
+        // 取出对象
         PyObject *v = src[i];
+        // 增加引用计数
         Py_INCREF(v);
+        // 赋值到新列表汇总
         dest[i] = v;
     }
+    // 最后设置 ob_size 为len
     Py_SIZE(np) = len;
     return (PyObject *)np;
 }
@@ -822,6 +868,7 @@ list_inplace_repeat(PyListObject *self, Py_ssize_t n)
 static int
 list_ass_item(PyListObject *a, Py_ssize_t i, PyObject *v)
 {
+    // 如果 i > a->ob_size 或者 i < 0 ，报错 
     if (!valid_index(i, Py_SIZE(a))) {
         PyErr_SetString(PyExc_IndexError,
                         "list assignment index out of range");
@@ -829,7 +876,9 @@ list_ass_item(PyListObject *a, Py_ssize_t i, PyObject *v)
     }
     if (v == NULL)
         return list_ass_slice(a, i, i+1, v);
+    // 增加引用计数
     Py_INCREF(v);
+    // 将i个元素设置为v
     Py_SETREF(a->ob_item[i], v);
     return 0;
 }
@@ -848,6 +897,7 @@ static PyObject *
 list_insert_impl(PyListObject *self, Py_ssize_t index, PyObject *object)
 /*[clinic end generated code: output=7f35e32f60c8cb78 input=858514cf894c7eab]*/
 {
+    // 调用ins1
     if (ins1(self, index, object) == 0)
         Py_RETURN_NONE;
     return NULL;
@@ -893,6 +943,8 @@ static PyObject *
 list_append(PyListObject *self, PyObject *object)
 /*[clinic end generated code: output=7c096003a29c0eae input=43a3fe48a7066e91]*/
 {
+    // 显然调用app1是核心，它里面实现了添加元素的逻辑
+    // Py_RETURN_NONE是一个宏，表示返回Python的None
     if (app1(self, object) == 0)
         Py_RETURN_NONE;
     return NULL;
@@ -1062,26 +1114,40 @@ list_pop_impl(PyListObject *self, Py_ssize_t index)
     PyObject *v;
     int status;
 
+    // 空列表的检测
     if (Py_SIZE(self) == 0) {
         /* Special-case most common failure cause */
         PyErr_SetString(PyExc_IndexError, "pop from empty list");
         return NULL;
     }
+    // 如果列表小于0，加上现有的元素个数
     if (index < 0)
         index += Py_SIZE(self);
+    // index < 0 或者 index > ob_size，报错
     if (!valid_index(index, Py_SIZE(self))) {
         PyErr_SetString(PyExc_IndexError, "pop index out of range");
         return NULL;
     }
+    // 根据索引获取指定位置的元素
     v = self->ob_item[index];
+
+    // 快分支
+    // 如果index是最后一个元素
+    // 那么直接删除即可
     if (index == Py_SIZE(self) - 1) {
+        // 直接调整容量
         status = list_resize(self, Py_SIZE(self) - 1);
         if (status >= 0)
             return v; /* and v now owns the reference the list had */
         else
             return NULL;
     }
+    // 到这里说明不是最后一个元素
+    // 那么改元素被删除之后，它后面所有的元素都要向前移动一个位置
     Py_INCREF(v);
+    // 调用list_ass_slice
+    // 等价于self[index: index+1] = []
+    // 里面会将元素删掉，并将剩余元素的位置进行调整
     status = list_ass_slice(self, index, index+1, (PyObject *)NULL);
     if (status < 0) {
         Py_DECREF(v);
@@ -2843,50 +2909,86 @@ static PySequenceMethods list_as_sequence = {
 static PyObject *
 list_subscript(PyListObject* self, PyObject* item)
 {
+    // 实现 val = lst[1] 
+
+    // 先看item是不是一个整数
+    // 显然这个item除了整数，也可以是切片
     if (PyIndex_Check(item)) {
         Py_ssize_t i;
+        // 这里检测i是否合法，因为Python的整数是没有限制的
+        // 但是列表的长度和容量都由一个有具体类型的变量维护
         i = PyNumber_AsSsize_t(item, PyExc_IndexError);
+        // 出现错误，直接return NULL
         if (i == -1 && PyErr_Occurred())
             return NULL;
+        // 如果小于0，那么加上列表的长度，变成正数索引
         if (i < 0)
             i += PyList_GET_SIZE(self);
+        // 然后调用list_item
         return list_item(self, i);
     }
+    // 如果传入的item是切片
     else if (PySlice_Check(item)) {
+        // start: 切片的其实位置
+        // end: 切片的结束位置
+        // step: 切片的步长
+        // slicelength: 获取的元素个数（计算得到）
+        // cur: 底层数组中的元素的索引
+        // i: 循环变量
         Py_ssize_t start, stop, step, slicelength, cur, i;
+        // 返回的结果
         PyObject* result;
         PyObject* it;
         PyObject **src, **dest;
 
+        // 对切片item进行解包，得到起始位置、结束位置、步长
         if (PySlice_Unpack(item, &start, &stop, &step) < 0) {
             return NULL;
         }
+        // 计算出slicelength，获取的元素个数
         slicelength = PySlice_AdjustIndices(Py_SIZE(self), &start, &stop,
                                             step);
 
+        // 如果slicelength为0
+        // 说明没有元素可以获取，因此直接返回一个空列表即可
         if (slicelength <= 0) {
+            // PyList_New表示创建一个PyList_Object
+            // 参数表示底层数组的长度
             return PyList_New(0);
         }
         else if (step == 1) {
+            // 依次拷贝start到stop的值，并增加引用计数
             return list_slice(self, start, stop);
         }
         else {
+            // 走到这里说明步长不为1，需要逐个指定元素
+            // 先申请容量为slicelength的列表
             result = list_new_prealloc(slicelength);
             if (!result) return NULL;
 
+            // src是一个二级指针
             src = self->ob_item;
+            // 获取结果的ob_item
             dest = ((PyListObject *)result)->ob_item;
+            // 进行循环，cur从start开始遍历，每次加上step步长
             for (cur = start, i = 0; i < slicelength;
                  cur += (size_t)step, i++) {
+                // it就是self->ob_item中的元素
                 it = src[cur];
+                // 增加引用计数
                 Py_INCREF(it);
+                // 设置到新列表中
                 dest[i] = it;
             }
+            // 将ob_size设置为slicelength
+            // 说明通过切片创建新列表，其长度和容量也是一致的
             Py_SIZE(result) = slicelength;
+            // 返回结果
             return result;
         }
     }
     else {
+        // 不是整数，不是切片，说明不合法
         PyErr_Format(PyExc_TypeError,
                      "list indices must be integers or slices, not %.200s",
                      item->ob_type->tp_name);
@@ -2897,23 +2999,33 @@ list_subscript(PyListObject* self, PyObject* item)
 static int
 list_ass_subscript(PyListObject* self, PyObject* item, PyObject* value)
 {
+    // 实现 lst[2] = val
+    //      lst[1:3] = [2,3,4,5,6]
+
+    // 还是检查是否是整数类型   
     if (PyIndex_Check(item)) {
         Py_ssize_t i = PyNumber_AsSsize_t(item, PyExc_IndexError);
         if (i == -1 && PyErr_Occurred())
             return -1;
+        // 索引小于0，则加上列表的长度
         if (i < 0)
             i += PyList_GET_SIZE(self);
+        // 调用list_ass_item进行设置
         return list_ass_item(self, i, value);
     }
+    // 切片的处理
     else if (PySlice_Check(item)) {
         Py_ssize_t start, stop, step, slicelength;
 
+        // 拆包，获取开始位置，结束位置，步长
         if (PySlice_Unpack(item, &start, &stop, &step) < 0) {
             return -1;
         }
+        // 计算最终的列表长度
         slicelength = PySlice_AdjustIndices(Py_SIZE(self), &start, &stop,
                                             step);
 
+        // 步长为1
         if (step == 1)
             return list_ass_slice(self, start, stop, value);
 
