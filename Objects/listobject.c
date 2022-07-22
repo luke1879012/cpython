@@ -139,6 +139,7 @@ show_alloc(void)
 }
 #endif
 
+// 列表缓冲池的最大值
 /* Empty list reuse scheme to save calls to malloc and free */
 #ifndef PyList_MAXFREELIST
 #define PyList_MAXFREELIST 80
@@ -177,6 +178,7 @@ _PyList_DebugMallocStats(FILE *out)
 PyObject *
 PyList_New(Py_ssize_t size)
 {
+    // 声明一个PyListObject *对象
     PyListObject *op;
 #ifdef SHOW_ALLOC_COUNT
     static int initialized = 0;
@@ -186,18 +188,24 @@ PyList_New(Py_ssize_t size)
     }
 #endif
 
+    // 如果size小于0，直接报错
     if (size < 0) {
         PyErr_BadInternalCall();
         return NULL;
     }
+    // 缓存池是否可以用，如果可用
     if (numfree) {
+        // 将缓存池对象个数减1
         numfree--;
+        // 从缓存池中获取
         op = free_list[numfree];
+        // 设置引用计数
         _Py_NewReference((PyObject *)op);
 #ifdef SHOW_ALLOC_COUNT
         count_reuse++;
 #endif
     } else {
+        // 不可用的时候，申请内存
         op = PyObject_GC_New(PyListObject, &PyList_Type);
         if (op == NULL)
             return NULL;
@@ -205,15 +213,20 @@ PyList_New(Py_ssize_t size)
         count_alloc++;
 #endif
     }
+    // 如果size等于0，ob_item设置为NULL
     if (size <= 0)
         op->ob_item = NULL;
     else {
+        // 否则的话，创建一个指定容量的指针数组，然后让ob_item指向它
+        // 所以是先创建PyListObject对象，然后创建指针数组
+        // 最后通过ob_item建立联系
         op->ob_item = (PyObject **) PyMem_Calloc(size, sizeof(PyObject *));
         if (op->ob_item == NULL) {
             Py_DECREF(op);
             return PyErr_NoMemory();
         }
     }
+    // 设置ob_size和allocated，然后返回op
     Py_SIZE(op) = size;
     op->allocated = size;
     // 创建PyListObject对象
@@ -435,9 +448,12 @@ list_dealloc(PyListObject *op)
         PyMem_FREE(op->ob_item);
     }
     // 缓冲池机制
+    // 判断缓冲池里面PyListObject对象的个数，如果美满，就添加到缓冲池
+    // 注意：走到这一步，底层数组已经被释放掉了
     if (numfree < PyList_MAXFREELIST && PyList_CheckExact(op))
         free_list[numfree++] = op;
     else
+        // 否则的话，直接释放内存即可
         Py_TYPE(op)->tp_free((PyObject *)op);
     Py_TRASHCAN_END
 }
@@ -507,10 +523,12 @@ list_length(PyListObject *a)
 static int
 list_contains(PyListObject *a, PyObject *el)
 {
+    // in 操作符
     PyObject *item;
     Py_ssize_t i;
     int cmp;
 
+    // 依次循环，比较一下
     for (i = 0, cmp = 0 ; cmp == 0 && i < Py_SIZE(a); ++i) {
         item = PyList_GET_ITEM(a, i);
         Py_INCREF(item);
@@ -596,38 +614,58 @@ PyList_GetSlice(PyObject *a, Py_ssize_t ilow, Py_ssize_t ihigh)
 static PyObject *
 list_concat(PyListObject *a, PyObject *bb)
 {
+    // 相加之后的列表长度
     Py_ssize_t size;
+    // 循环变量
     Py_ssize_t i;
+    // 两个二级指针，指向相应的ob_item
     PyObject **src, **dest;
+    // 相加之后创建的新列表
     PyListObject *np;
+    // 类型检测，注意整列的bb是一个PyObject *
+    // 所以它可以不是列表，但它的类型对象必须继承list
+    // 因此这里检测函数是PyList_Check，相当于isinstance(obj, list)
+    // 如果是PyList_CheckExactly，相当于type(obj) is list
     if (!PyList_Check(bb)) {
         PyErr_Format(PyExc_TypeError,
                   "can only concatenate list (not \"%.200s\") to list",
                   bb->ob_type->tp_name);
         return NULL;
     }
+    
+    // 这个宏，会将bb 装成 PyListObject *
 #define b ((PyListObject *)bb)
+
+    // 判断长度是否溢出
     if (Py_SIZE(a) > PY_SSIZE_T_MAX - Py_SIZE(b))
         return PyErr_NoMemory();
+    // 计算新列表的长度
     size = Py_SIZE(a) + Py_SIZE(b);
+    // 申请空间，其中指针数组的长度为size
     np = (PyListObject *) list_new_prealloc(size);
     if (np == NULL) {
         return NULL;
     }
+    // 获取 a->ob_item 和 np->ob_item
     src = a->ob_item;
     dest = np->ob_item;
+    // 先将 + 左边的列表里面的元素拷贝过去，并增加引用计数
     for (i = 0; i < Py_SIZE(a); i++) {
         PyObject *v = src[i];
         Py_INCREF(v);
         dest[i] = v;
     }
+
     src = b->ob_item;
+    // 要从Py_SIZE(a)的位置开始设置，否则就把之前的元素覆盖掉了
     dest = np->ob_item + Py_SIZE(a);
+    // 再将 + 右边的列表拷贝过去，并增加引用计数
     for (i = 0; i < Py_SIZE(b); i++) {
         PyObject *v = src[i];
         Py_INCREF(v);
         dest[i] = v;
     }
+    // 设置ob_size
     Py_SIZE(np) = size;
     return (PyObject *)np;
 #undef b
