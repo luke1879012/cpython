@@ -13,10 +13,13 @@ class tuple "PyTupleObject *" "&PyTuple_Type"
 
 #include "clinic/tupleobject.c.h"
 
+// 元组的缓存池
+// PyTuple_MAXSAVESIZE 保留长度为20以下的元组，并放在对应索引
 /* Speed optimization to avoid frequent malloc/free of small tuples */
 #ifndef PyTuple_MAXSAVESIZE
 #define PyTuple_MAXSAVESIZE     20  /* Largest tuple to save on free list */
 #endif
+// PyTuple_MAXFREELIST 每个索引下面的链表，最多可以存放的数量
 #ifndef PyTuple_MAXFREELIST
 #define PyTuple_MAXFREELIST  2000  /* Maximum number of tuples of each size to save */
 #endif
@@ -25,7 +28,9 @@ class tuple "PyTupleObject *" "&PyTuple_Type"
 /* Entries 1 up to PyTuple_MAXSAVESIZE are free lists, entry 0 is the empty
    tuple () of which at most one instance will be allocated.
 */
+// free_list 存储总链表
 static PyTupleObject *free_list[PyTuple_MAXSAVESIZE];
+// numfree 记录每个链表的可用个数
 static int numfree[PyTuple_MAXSAVESIZE];
 #endif
 #ifdef COUNT_ALLOCS
@@ -79,6 +84,7 @@ _PyTuple_DebugMallocStats(FILE *out)
 PyObject *
 PyTuple_New(Py_ssize_t size)
 {
+    // PyTupleObject指针
     PyTupleObject *op;
     Py_ssize_t i;
     if (size < 0) {
@@ -86,39 +92,54 @@ PyTuple_New(Py_ssize_t size)
         return NULL;
     }
 #if PyTuple_MAXSAVESIZE > 0
+    // 元组同样也有缓存池
     if (size == 0 && free_list[0]) {
+        // 创建的元素长度为0
+        // 那么获取缓存池中索引为0的对象（指针）
+        // 空元组是单例，只有一份
         op = free_list[0];
         Py_INCREF(op);
 #ifdef COUNT_ALLOCS
         _Py_tuple_zero_allocs++;
 #endif
+        // 返回
         return (PyObject *) op;
     }
+    // 当 0<size<20 时，直接通过 op = free_list[size] 从缓存池获取
     if (size < PyTuple_MAXSAVESIZE && (op = free_list[size]) != NULL) {
+        // 元组取走后，别忘记让free_list[size] 指向下一个元素
+        // 也就是(PyTupleObject *) op->ob_item[0]
         free_list[size] = (PyTupleObject *) op->ob_item[0];
+        // 维护对应的链表长度
         numfree[size]--;
 #ifdef COUNT_ALLOCS
         _Py_fast_tuple_allocs++;
 #endif
         /* Inline PyObject_InitVar */
 #ifdef Py_TRACE_REFS
+        // 设置ob_size和ob_type
         Py_SIZE(op) = size;
         Py_TYPE(op) = &PyTuple_Type;
 #endif
+        // 引用计数初始化为1
         _Py_NewReference((PyObject *)op);
     }
     else
 #endif
     {
+        // 到这里说明没有从缓存池中获取，那么要重新申请内存
+        // 元组的元素个数同样有限制，但是一般达不到
         /* Check for overflow */
         if ((size_t)size > ((size_t)PY_SSIZE_T_MAX - sizeof(PyTupleObject) -
                     sizeof(PyObject *)) / sizeof(PyObject *)) {
             return PyErr_NoMemory();
         }
+        // 申请空间
         op = PyObject_GC_NewVar(PyTupleObject, &PyTuple_Type, size);
         if (op == NULL)
             return NULL;
     }
+    // 将每个元素都设置为NULL
     for (i=0; i < size; i++)
         op->ob_item[i] = NULL;
 #if PyTuple_MAXSAVESIZE > 0
@@ -132,6 +153,7 @@ PyTuple_New(Py_ssize_t size)
     count_tracked++;
 #endif
     _PyObject_GC_TRACK(op);
+    // 返回
     return (PyObject *) op;
 }
 
@@ -246,17 +268,26 @@ tupledealloc(PyTupleObject *op)
         while (--i >= 0)
             Py_XDECREF(op->ob_item[i]);
 #if PyTuple_MAXSAVESIZE > 0
+    // len表示元组的长度
+    // numfree[len]表示该链表上挂了多少个长度为len的元组
+    // 如果元组的长度小于20，并且对应的链表长度小于2000
         if (len < PyTuple_MAXSAVESIZE &&
             numfree[len] < PyTuple_MAXFREELIST &&
             Py_TYPE(op) == &PyTuple_Type)
         {
+            // 将回收的元组的第一个元素设置为free_list[len]
             op->ob_item[0] = (PyObject *) free_list[len];
+            // 维护链表的长度
             numfree[len]++;
+            // 再将free_list[len]设置为该元组
+            // 因为改元组成为了新的 free_list[len]
+            // 所以采用的头插法
             free_list[len] = op;
             goto done; /* return */
         }
 #endif
     }
+    // 不满足条件，直接释放内存
     Py_TYPE(op)->tp_free((PyObject *)op);
 done:
     Py_TRASHCAN_END

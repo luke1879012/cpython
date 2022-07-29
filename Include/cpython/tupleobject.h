@@ -11,6 +11,7 @@ typedef struct {
     /* ob_item contains space for 'ob_size' elements.
        Items must normally not be NULL, except during construction when
        the tuple is not yet visible outside the function that builds it. */
+    // C语言的骚操作，数组长度1可以当成n来用
     PyObject *ob_item[1];
 } PyTupleObject;
 

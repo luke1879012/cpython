@@ -757,6 +757,45 @@ print(d)  # {1: [123], 2: [123], 3: [123], 4: [123]}
 
 
 
+## tuple
+
+ 元组存在的意义：它可以作为字典的 key、以及可以作为集合的元素。 
+
+
+
+实例对象：`PyTupleObject`  [跳转](Include\cpython\tupleobject.h)
+
+```c
+typedef struct {
+    PyObject_VAR_HEAD
+    PyObject *ob_item[1];
+} PyTupleObject;
+```
+
+类型对象：`PyTuple_Type` [跳转](Objects\tupleobject.c)
+
+
+
+### 生命周期
+
+#### 创建对象
+
+Python/C API：
+
+```
+PyTuple_New
+```
+
+
+
+### 缓存池
+
+20条链表，每个链表可以有2000个元组，链表的索引对应元组的长度
+
+元组的这项技术也被称为**静态资源缓存**，因为元组在执行析构函数时，**不仅对象本身没有被回收，连底层的指针数组也被缓存起来了**。那么当再次分配时，速度就会快一些。 
+
+
+
 
 
 
