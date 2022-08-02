@@ -108,6 +108,7 @@ converting the dict to the combined table.
  * Making this 8, rather than 4 reduces the number of resizes for most
  * dictionaries, without any significant extra memory use.
  */
+// 字典最小容量
 #define PyDict_MINSIZE 8
 
 #include "Python.h"
@@ -397,6 +398,7 @@ dictkeys_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
  * USABLE_FRACTION should be quick to calculate.
  * Fractions around 1/2 to 2/3 seem to work well in practice.
  */
+// 控制哈希表元素的容量
 #define USABLE_FRACTION(n) (((n) << 1)/3)
 
 /* ESTIMATE_SIZE is reverse function of USABLE_FRACTION.
@@ -753,7 +755,9 @@ lookdict(PyDictObject *mp, PyObject *key,
          Py_hash_t hash, PyObject **value_addr)
 {
     size_t i, mask, perturb;
+    // ma_keys
     PyDictKeysObject *dk;
+    // ma_keys -> dk_entries
     PyDictKeyEntry *ep0;
 
 top:
@@ -761,25 +765,47 @@ top:
     ep0 = DK_ENTRIES(dk);
     mask = DK_MASK(dk);
     perturb = hash;
+    // 计算索引，也就是哈希索引数组的中的哪一个槽
+    // 计算方式是hash值和mask按位与
     i = (size_t)hash & mask;
 
     for (;;) {
+        // 等价于dk->indesc[i]，也就是索引为i的槽里面存储的值
+        // 显然这个ix也是索引
+        // 只不过它表示某个"键值对"在"键值对数组"中的索引
         Py_ssize_t ix = dictkeys_get_index(dk, i);
+        // 如果ix == DKIX_EMPTY，说明当前的槽是空的
+        // 该槽没有存储某个"键值对"在"键值对数组"中的索引
+        // 证明该槽是可用的
         if (ix == DKIX_EMPTY) {
             *value_addr = NULL;
             return ix;
         }
         if (ix >= 0) {
+            // 如果ix>=0，说明该槽被用了
+            // 那么根据该槽存储的索引，去键值对数组中查询
+            // 拿到指定的entry的指针
             PyDictKeyEntry *ep = &ep0[ix];
             assert(ep->me_key != NULL);
+            // 如果两个key一样，那么直接将值设置为ep->me_value
+            // 这里先比较地址是否一样，Python的变量在C里面就是一个指针
+            // C里面的 == 相当于 Python里面的 is
             if (ep->me_key == key) {
                 *value_addr = ep->me_value;
                 return ix;
             }
+            // 如果不是同一个对象，那么就比较它们的哈希值是否相同
+            // 比如 33和33 是一个对象，都是小整数对象池里面的整数
+            // 但是 3333和3333 不是一个对象，但是它们的值是一样的
+            // 因此先判断id是否一致，如果不一致再比较哈希值是否一样
             if (ep->me_hash == hash) {
+                // 哈希值一样的话，那么获取me_key
                 PyObject *startkey = ep->me_key;
+                // 增加引用计数
                 Py_INCREF(startkey);
+                // 比较key是否相等
                 int cmp = PyObject_RichCompareBool(startkey, key, Py_EQ);
+                // 减少引用计数
                 Py_DECREF(startkey);
                 if (cmp < 0) {
                     *value_addr = NULL;
@@ -797,6 +823,12 @@ top:
                 }
             }
         }
+        // 如果条件均不满足，调整姿势，进行下一次探索
+        // 具体做法是将perturb右移PERTURB_SHIFT个位
+        // 然后和i进行一系列运算之后，再和mask按位与
+        // 至于为什么这么做，可以认为是Python总结出的经验
+        // 这种做法在避免索引冲突时的表现比较好
+        // 总之会参考对象的哈希值，探测序列因哈希值而异
         perturb >>= PERTURB_SHIFT;
         i = (i*5 + perturb + 1) & mask;
     }
@@ -1000,6 +1032,8 @@ _PyDict_MaybeUntrack(PyObject *op)
 static Py_ssize_t
 find_empty_slot(PyDictKeysObject *keys, Py_hash_t hash)
 {
+    // 将槽的索引返回
+
     assert(keys != NULL);
 
     const size_t mask = DK_MASK(keys);

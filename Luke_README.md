@@ -47,6 +47,15 @@ frozenset -> PyFrozenSet_Type (PyTypeObject结构体实例)
 
 ## 各个类型的内存大小
 使用`sys.getsizeof`获取，Python中对象的大小，是根据底层的结构体计算出来的
+
+**sys.getsizeof**和**`__sizeof__`**方法，两者有什么区别呢？
+
+答案是使用**sys.getsizeof**会比调用对象的**`__sizeof__`**方法计算出来的内存大小多16个字节。
+
+原因是一个可以发生循环引用的对象，而对于可以发生循环引用的对象，都将参与GC。因此它们除了PyObject_Head之外，还会额外有一个16字节的PyGC_Head。
+
+
+
 * [float](#float内存大小)
 * [int](#int内存大小)
 * [bytes](#bytes内存大小)
@@ -793,6 +802,221 @@ PyTuple_New
 20条链表，每个链表可以有2000个元组，链表的索引对应元组的长度
 
 元组的这项技术也被称为**静态资源缓存**，因为元组在执行析构函数时，**不仅对象本身没有被回收，连底层的指针数组也被缓存起来了**。那么当再次分配时，速度就会快一些。 
+
+
+
+## dict
+
+**哈希表就是一种空间换时间的方法** 
+
+实例对象：` PyDictObject` [跳转](Include\cpython\dictobject.h)
+
+```c
+typedef struct {
+    PyObject_HEAD
+    Py_ssize_t ma_used;
+    uint64_t ma_version_tag;
+    PyDictKeysObject *ma_keys;
+    PyObject **ma_values;
+} PyDictObject;
+```
+
+
+
+类型对象：`PyDict_Type` [跳转](Objects\dictobject.c)
+
+
+
+
+
+### 结合表和分离表 
+
+* 结合表的话，键和值就存在一起；
+* 分离表的话，键和值就存在不同的地方。 
+
+
+
+ 分离表是在PEP-0412中被引入的，主要是为了提高内存使用率，也就是让不同的字典共享相同的一组key。 
+
+
+
+我们平时自己创建的字典，使用的都是结合表
+
+
+
+### 原理
+
+**哈希索引数组**和**键值对数组** 分开存储
+
+
+
+
+###  **容量策略** 
+
+ 实践经验表明，一个**1/2**到**2/3**满的哈希表，性能较为理想 
+
+
+
+### dict的内存大小
+
+`PyDictObject`：48字节
+
+```
+ob_refcnt: 8字节
+ob_type: 8字节
+ma_used: 8字节
+ma_version_tag: 8字节
+ma_keys: 8字节
+ma_values: 8字节
+```
+
+`PyDictKeysObject`：40字节 + dk_size*1字节
+
+```
+dk_refcnt: 8字节
+dk_size: 8字节
+dk_lookup: 8字节
+dk_usable: 8字节
+dk_nentries: 8字节
+dk_indices: dk_size*1字节
+```
+
+`PyDictKeyEntry`：24字节
+
+```
+me_hash: 8字节
+me_key: 8字节
+me_value: 8字节
+```
+
+空字典(不通过Python/C API创建)：
+
+一个`PyDictObject`，一个`PyDictKeysObject`
+
+最少8个哈希索引数组，通过2/3计算，得到5个键值对容量(`PyDictKeyEntry`)
+
+= `48 + 40 + 8*1 + 24*5` = 216
+
+
+
+空字典(`d={}`)：
+
+只有`PyDictObject`对象
+
+= `48`
+
+
+
+###  **索引冲突** 
+
+**解决索引冲突的常用方法有两种：**
+
+- 分离链接法(separate chaining)
+- 开放寻址法(open addressing)
+
+
+
+####  **分离链接法** 
+
+分离链接法为每个哈希槽维护一个链表，所有哈希到同一槽位的键保存到对应的链表中
+
+
+
+####  **开放寻址法** 
+
+ Python依旧是将key映射成索引，并存在哈希索引数组的槽中，若发现槽被占了，那么就尝试另一个 
+
+#####  常见的探测函数 
+
+- 线性探测(linear probing)
+- 平方探测(quadratic probing)
+
+ 
+
+Python对此进行了优化，探测函数会参考对象哈希值，生成不同的探测序列，进一步降低索引冲突的可能性 
+
+Python的这种做法被称为**迭代探测**，当然迭代探测也属于开放寻址法的一种。 
+
+公式：
+
+```c
+// 将当前哈希值右移PERTURB_SHIFT个位
+perturb >>= PERTURB_SHIFT;
+// 然后将哈希值加上 i*5 + 1，这个 i 就是当前冲突的索引
+// 运算之后的结果再和mask按位与，得到一个新的 i
+// 然后判断变量 i 是否可用，不可用重复当前逻辑
+// 直到出现一个可用的槽
+i = (i*5 + perturb + 1) & mask;
+```
+
+
+
+
+
+####  **探测函数** 
+
+ Python为哈希表搜索提供了多种探测函数，例如
+
+* `lookdict`：一般通用
+* `lookdict_unicode`： 专门针对key为字符串的entry 
+* `lookdict_index`： 针对key为整数的entry 
+
+
+
+因此lookdict这个函数只是告诉我们当前哈希表能否找到一个可用的槽去存储，如果能，那么再由find_empty_slot函数将**槽**的索引返回， 
+
+
+
+
+
+####  entry的三种状态 
+
+*  **unused态** 
+
+*  **active态** 
+
+*  **dummy态** 
+
+  当key被删除时，它所在的entry便从`active`态编程了`dummy`态( 伪删除技术 )
+
+
+
+
+
+###  **哈希攻击** 
+
+- Python解释器进程启动后，产生一个随机数作为盐；
+- 哈希函数同时参考对象本身以及随机数计算哈希值；
+
+
+
+
+
+### 生命周期
+
+#### 创建
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
