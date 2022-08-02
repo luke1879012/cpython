@@ -996,13 +996,27 @@ i = (i*5 + perturb + 1) & mask;
 
 #### 创建
 
+`PyDict_New`
 
 
 
 
 
+### 行为
+
+#### 添加键值对
+
+`PyDict_SetItem`
 
 
+
+#### 获取值
+
+`dict_subscript`
+
+
+
+#### 删除键值对
 
 
 

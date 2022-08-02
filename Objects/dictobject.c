@@ -534,18 +534,24 @@ static PyDictKeysObject *new_keys_object(Py_ssize_t size)
     PyDictKeysObject *dk;
     Py_ssize_t es, usable;
 
+    // 检测，size是否>=PyDict_MINSIZE
     assert(size >= PyDict_MINSIZE);
     assert(IS_POWER_OF_2(size));
 
     usable = USABLE_FRACTION(size);
+    // es: 哈希表中的每个索引占多少字节
+    // 因为长度不同，哈希索引数组的元素大小也不同
     if (size <= 0xff) {
+        // 小于等于16**2-1=255，采用1字节存储
         es = 1;
     }
     else if (size <= 0xffff) {
+        // 小于等于16**4-1=65535，采用2字节存储
         es = 2;
     }
 #if SIZEOF_VOID_P > 4
     else if (size <= 0xffffffff) {
+        // 否则采用4字节
         es = 4;
     }
 #endif
@@ -553,10 +559,17 @@ static PyDictKeysObject *new_keys_object(Py_ssize_t size)
         es = sizeof(Py_ssize_t);
     }
 
+    // 然后是创建PyDictKeysObject，这里会优先从缓存池中获取
+    // 当然，PyDictObject也有自己的缓存池
     if (size == PyDict_MINSIZE && numfreekeys > 0) {
         dk = keys_free_list[--numfreekeys];
     }
     else {
+        // 否则malloc重新申请内存
+        // 注意这里申请的内存由三部分组成
+        // 1) PyDictKeysObject结构体的大小
+        // 2) 哈希索引数组的长度乘以每个元素的大小，也就是es*size
+        // 3) 键值对数组的长度乘上每个entry的大小
         dk = PyObject_MALLOC(sizeof(PyDictKeysObject)
                              + es * size
                              + sizeof(PyDictKeyEntry) * usable);
@@ -566,11 +579,14 @@ static PyDictKeysObject *new_keys_object(Py_ssize_t size)
         }
     }
     _Py_INC_REFTOTAL;
+    // 设置引用计数、可用的entry个数等信息
     dk->dk_refcnt = 1;
     dk->dk_size = size;
     dk->dk_usable = usable;
+    // 设置探测函数
     dk->dk_lookup = lookdict_unicode_nodummy;
     dk->dk_nentries = 0;
+    // 哈希表的初始化
     memset(&dk->dk_indices[0], 0xff, es * size);
     memset(DK_ENTRIES(dk), 0, sizeof(PyDictKeyEntry) * usable);
     return dk;
@@ -700,6 +716,7 @@ clone_combined_dict(PyDictObject *orig)
 PyObject *
 PyDict_New(void)
 {
+    // 创建一个新的dict对象
     dictkeys_incref(Py_EMPTY_KEYS);
     return new_dict(Py_EMPTY_KEYS, empty_values);
 }
@@ -1061,16 +1078,22 @@ Returns -1 if an error occurred, or 0 on success.
 static int
 insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
 {
+    // key对应的value
     PyObject *old_value;
+    // entry
     PyDictKeyEntry *ep;
 
+    // 增加key和value的引用计数
     Py_INCREF(key);
     Py_INCREF(value);
+    // 类型检查
     if (mp->ma_values != NULL && !PyUnicode_CheckExact(key)) {
         if (insertion_resize(mp) < 0)
             goto Fail;
     }
 
+    // mp->ma_keys->dk_lookup表示获取探测函数
+    // 会基于传入的哈希值、key、判断哈希索引数组是否有可用的槽
     Py_ssize_t ix = mp->ma_keys->dk_lookup(mp, key, hash, &old_value);
     if (ix == DKIX_ERROR)
         goto Fail;
@@ -1090,35 +1113,56 @@ insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
     }
 
     if (ix == DKIX_EMPTY) {
+        // 如果ix==DKIX_EMPTY
+        // 说明哈希索引数组存在一个可用的槽
         /* Insert into new slot. */
         assert(old_value == NULL);
         if (mp->ma_keys->dk_usable <= 0) {
             /* Need to resize. */
+            /* 判断是否需要resize */
             if (insertion_resize(mp) < 0)
                 goto Fail;
         }
+        // 存在可用的槽，调用find_empty_slot
+        // 将可用的索引找到、并返回
         Py_ssize_t hashpos = find_empty_slot(mp->ma_keys, hash);
+        // 拿到PyDictKeyEntry *指针
         ep = &DK_ENTRIES(mp->ma_keys)[mp->ma_keys->dk_nentries];
+        // 将该entry在键值对数组中的索引存储在指定的槽里面
         dictkeys_set_index(mp->ma_keys, hashpos, mp->ma_keys->dk_nentries);
+        // 设置key
         ep->me_key = key;
+        // 设置hash
         ep->me_hash = hash;
+        // 但value还没有设置，因为还要判断哈希表的种类
+        // 如果ma_values数组不为空，说明是分离表
         if (mp->ma_values) {
             assert (mp->ma_values[mp->ma_keys->dk_nentries] == NULL);
+            // 要将value保存在ma_values中
             mp->ma_values[mp->ma_keys->dk_nentries] = value;
         }
         else {
+            // 否则是结合表
+            // 那么value就设置在PyDictKeyEntry对象的me_value里面
             ep->me_value = value;
         }
+        // 使用个数+1
         mp->ma_used++;
+        // 版本数+1
         mp->ma_version_tag = DICT_NEXT_VERSION();
+        // 可用数-1
         mp->ma_keys->dk_usable--;
+        // 里面entry数量+1
         mp->ma_keys->dk_nentries++;
         assert(mp->ma_keys->dk_usable >= 0);
         ASSERT_CONSISTENT(mp);
         return 0;
     }
 
+    // 走到这里说明key已经存在了，那么此时相当于修改
+    // 将旧的value替换掉
     if (old_value != value) {
+        // 分离表，修改ma_values
         if (_PyDict_HasSplitTable(mp)) {
             mp->ma_values[ix] = value;
             if (old_value == NULL) {
@@ -1127,10 +1171,12 @@ insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
                 mp->ma_used++;
             }
         }
+        // 结合表，修改ma_keys->dk_entries中指定entry的me_value
         else {
             assert(old_value != NULL);
             DK_ENTRIES(mp->ma_keys)[ix].me_value = value;
         }
+        // 增加版本号
         mp->ma_version_tag = DICT_NEXT_VERSION();
     }
     Py_XDECREF(old_value); /* which **CAN** re-enter (see issue #22653) */
@@ -1555,18 +1601,26 @@ _PyDict_LoadGlobal(PyDictObject *globals, PyDictObject *builtins, PyObject *key)
 int
 PyDict_SetItem(PyObject *op, PyObject *key, PyObject *value)
 {
+    // 字典
     PyDictObject *mp;
+    // 哈希值
     Py_hash_t hash;
     if (!PyDict_Check(op)) {
+        // 不是字典则报错，该方法需要字典才可以调用
         PyErr_BadInternalCall();
         return -1;
     }
     assert(key);
     assert(value);
     mp = (PyDictObject *)op;
+    // 如果key不是字符串
+    // 或者哈希值还没有计算的话
     if (!PyUnicode_CheckExact(key) ||
         (hash = ((PyASCIIObject *) key)->hash) == -1)
     {
+        // 计算哈希值，PyObject_Hash是一个泛型API
+        // 会调用类型对象的tp_hash函数，因此等价于
+        // Py_TYPE(key) -> op_hash(key)
         hash = PyObject_Hash(key);
         if (hash == -1)
             return -1;
@@ -1576,6 +1630,7 @@ PyDict_SetItem(PyObject *op, PyObject *key, PyObject *value)
         return insert_to_emptydict(mp, key, hash, value);
     }
     /* insertdict() handles any resizing that might be necessary */
+    /* 调用insertdict，必要时调整元素 */
     return insertdict(mp, key, hash, value);
 }
 
@@ -1608,17 +1663,24 @@ delitem_common(PyDictObject *mp, Py_hash_t hash, Py_ssize_t ix,
     PyObject *old_key;
     PyDictKeyEntry *ep;
 
+    // 找到指定的槽，拿到里面存储的索引
     Py_ssize_t hashpos = lookdict_index(mp->ma_keys, hash, ix);
     assert(hashpos >= 0);
 
+    // 已用的entries个数-1
     mp->ma_used--;
+    // 版本号增加
     mp->ma_version_tag = DICT_NEXT_VERSION();
+    // 拿到entry的指针
     ep = &DK_ENTRIES(mp->ma_keys)[ix];
+    // 先将dk_entries数组中指定的entry设置为dummy状态
     dictkeys_set_index(mp->ma_keys, hashpos, DKIX_DUMMY);
     ENSURE_ALLOWS_DELETIONS(mp);
     old_key = ep->me_key;
+    // 将其key、value都设置为NULL
     ep->me_key = NULL;
     ep->me_value = NULL;
+    // 减少引用计数
     Py_DECREF(old_key);
     Py_DECREF(old_value);
 
@@ -1631,6 +1693,7 @@ PyDict_DelItem(PyObject *op, PyObject *key)
 {
     Py_hash_t hash;
     assert(key);
+    // 获取hash值
     if (!PyUnicode_CheckExact(key) ||
         (hash = ((PyASCIIObject *) key)->hash) == -1) {
         hash = PyObject_Hash(key);
@@ -1655,6 +1718,7 @@ _PyDict_DelItem_KnownHash(PyObject *op, PyObject *key, Py_hash_t hash)
     assert(key);
     assert(hash != -1);
     mp = (PyDictObject *)op;
+    // 获取对应entry的index
     ix = (mp->ma_keys->dk_lookup)(mp, key, hash, &old_value);
     if (ix == DKIX_ERROR)
         return -1;
@@ -1672,6 +1736,7 @@ _PyDict_DelItem_KnownHash(PyObject *op, PyObject *key, Py_hash_t hash)
         assert(ix >= 0);
     }
 
+    // 传入hash和ix，调用delitem_common
     return delitem_common(mp, hash, ix, old_value);
 }
 
@@ -2131,25 +2196,36 @@ dict_length(PyDictObject *mp)
 static PyObject *
 dict_subscript(PyDictObject *mp, PyObject *key)
 {
+    // 获取某个键对应的值
+
     Py_ssize_t ix;
     Py_hash_t hash;
     PyObject *value;
 
+    // 获取哈希值
     if (!PyUnicode_CheckExact(key) ||
         (hash = ((PyASCIIObject *) key)->hash) == -1) {
         hash = PyObject_Hash(key);
         if (hash == -1)
             return NULL;
     }
+    // 是否存在可用的槽
+    // 注意value传了一个指针进去
+    // 所以当entry存在时，会将 value 设置为指定值
     ix = (mp->ma_keys->dk_lookup)(mp, key, hash, &value);
     if (ix == DKIX_ERROR)
         return NULL;
+    // 注意这里是获取元素，如果key被映射了该槽
+    // 然后该槽还可用，这意味着什么呢？显然是不存在此key
     if (ix == DKIX_EMPTY || value == NULL) {
         if (!PyDict_CheckExact(mp)) {
             /* Look up __missing__ method if we're a subclass. */
+            // 如果其类型对象继承dict，那么在找不到key时
+            // 会执行 __missing__ 方法
             PyObject *missing, *res;
             _Py_IDENTIFIER(__missing__);
             missing = _PyObject_LookupSpecial((PyObject *)mp, &PyId___missing__);
+            // 执行 __missing__ 方法
             if (missing != NULL) {
                 res = PyObject_CallFunctionObjArgs(missing,
                                                    key, NULL);
@@ -2159,9 +2235,12 @@ dict_subscript(PyDictObject *mp, PyObject *key)
             else if (PyErr_Occurred())
                 return NULL;
         }
+        // 报错，KeyError
         _PyErr_SetKeyError(key);
         return NULL;
     }
+    // 否则说明value获取到了
+    // 增加引用计数，返回value
     Py_INCREF(value);
     return value;
 }
@@ -3318,6 +3397,7 @@ dict_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     self = type->tp_alloc(type, 0);
     if (self == NULL)
         return NULL;
+    // 创建 PyDictObject *对象
     d = (PyDictObject *)self;
 
     /* The object has been implicitly tracked by tp_alloc */
@@ -3326,6 +3406,7 @@ dict_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 
     d->ma_used = 0;
     d->ma_version_tag = DICT_NEXT_VERSION();
+    // 创建PyDictKeyObject *对象，并设置
     d->ma_keys = new_keys_object(PyDict_MINSIZE);
     if (d->ma_keys == NULL) {
         Py_DECREF(self);
