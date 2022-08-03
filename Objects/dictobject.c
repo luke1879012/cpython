@@ -248,10 +248,13 @@ static uint64_t pydict_global_version = 0;
 
 /* Dictionary reuse scheme to save calls to malloc and free */
 #ifndef PyDict_MAXFREELIST
+// 字典缓存池的大小
 #define PyDict_MAXFREELIST 80
 #endif
 static PyDictObject *free_list[PyDict_MAXFREELIST];
+// 当前缓存池数量
 static int numfree = 0;
+// PyDictKeysObject缓存池
 static PyDictKeysObject *keys_free_list[PyDict_MAXFREELIST];
 static int numfreekeys = 0;
 
@@ -532,6 +535,8 @@ _PyDict_CheckConsistency(PyObject *op, int check_content)
 
 static PyDictKeysObject *new_keys_object(Py_ssize_t size)
 {
+    // 创建PyDictKeysObject
+
     PyDictKeysObject *dk;
     Py_ssize_t es, usable;
 
@@ -596,12 +601,18 @@ static PyDictKeysObject *new_keys_object(Py_ssize_t size)
 static void
 free_keys_object(PyDictKeysObject *keys)
 {
+    // PyDictKeysObject的销毁
+
+    // 获取entry
     PyDictKeyEntry *entries = DK_ENTRIES(keys);
     Py_ssize_t i, n;
+    // 将每个entry的me_key、me_value的引用计数减1
     for (i = 0, n = keys->dk_nentries; i < n; i++) {
         Py_XDECREF(entries[i].me_key);
         Py_XDECREF(entries[i].me_value);
     }
+    // 将其放在缓存池当中
+    // 当缓存池未满、并且dk_size为8的时候被缓存
     if (keys->dk_size == PyDict_MINSIZE && numfreekeys < PyDict_MAXFREELIST) {
         keys_free_list[numfreekeys++] = keys;
         return;
@@ -619,6 +630,7 @@ new_dict(PyDictKeysObject *keys, PyObject **values)
     PyDictObject *mp;
     assert(keys != NULL);
     if (numfree) {
+        // 缓存池获取
         mp = free_list[--numfree];
         assert (mp != NULL);
         assert (Py_TYPE(mp) == &PyDict_Type);
@@ -2117,14 +2129,23 @@ Fail:
 static void
 dict_dealloc(PyDictObject *mp)
 {
+    // 获取ma_values指针
     PyObject **values = mp->ma_values;
+    // 获取ma_keys指针
     PyDictKeysObject *keys = mp->ma_keys;
     Py_ssize_t i, n;
 
     /* bpo-31095: UnTrack is needed before calling any callbacks */
+    // 因为要被销毁，所以让GC不再跟踪
     PyObject_GC_UnTrack(mp);
+    // 用于延迟释放
     Py_TRASHCAN_BEGIN(mp, dict_dealloc)
+
+    // 调整引用计数
+    // 如果values不为NULL，说明是分离表
     if (values != NULL) {
+        // 将指向的value、key的引用计数减1
+        // 然后释放ma_values和ma_keys
         if (values != empty_values) {
             for (i = 0, n = mp->ma_keys->dk_nentries; i < n; i++) {
                 Py_XDECREF(values[i]);
@@ -2133,13 +2154,20 @@ dict_dealloc(PyDictObject *mp)
         }
         dictkeys_decref(keys);
     }
+    // 否则说明是结合表
     else if (keys != NULL) {
+        // 结合表的话，dk_refcnt一定是1
+        // 此时值需要释放ma_keys，因为键值对全部由它来维护
+        // 在DK_DECREF里面，会将每个key、value的引用计数减1
+        // 然后释放ma_keys
         assert(keys->dk_refcnt == 1);
         dictkeys_decref(keys);
     }
+    // 将被销毁的对象放到缓存池当中
     if (numfree < PyDict_MAXFREELIST && Py_TYPE(mp) == &PyDict_Type)
         free_list[numfree++] = mp;
     else
+        // 如果缓存池已满，则将释放内存
         Py_TYPE(mp)->tp_free((PyObject *)mp);
     Py_TRASHCAN_END
 }

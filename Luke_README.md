@@ -1057,7 +1057,23 @@ PyDictObject里面有一个ma_used字段，它维护的是键值对的数量，�
 
 
 
+### 缓存池
 
+`PyDictObject`和`PyDictKeysObject`都有缓存池
+
+```c
+#ifndef PyDict_MAXFREELIST
+#define PyDict_MAXFREELIST 80
+#endif
+static PyDictObject *free_list[PyDict_MAXFREELIST];
+static int numfree = 0;
+static PyDictKeysObject *keys_free_list[PyDict_MAXFREELIST];
+static int numfreekeys = 0;
+```
+
+大小都是80
+
+`PyDictKeysObject`缓存条件：当缓存池未满、并且dk_size为8的时候被缓存
 
 
 
