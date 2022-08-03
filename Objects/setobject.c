@@ -152,46 +152,87 @@ set_add_entry(PySetObject *so, PyObject *key, Py_hash_t hash)
 
   restart:
 
+    // 获取mask
     mask = so->mask;
+    // hash和mask进行按位与，得到一个索引
     i = (size_t)hash & mask;
 
+    // 获取对应的entry指针
     entry = &so->table[i];
     if (entry->key == NULL)
+        // 如果entry-key == NULL
+        // 表示当前位置没有被使用
+        // 直接跳到found_unused标签
         goto found_unused;
 
+    // 否则说明改位置已经存储entry
     freeslot = NULL;
+    // 将perturb设置为hash
     perturb = hash;
 
+    // 接下来就要改变规则，重新映射了
     while (1) {
+        // 获取已存在entry的hash字段的值
+        // 如果和我们当前的哈希值一样的话
         if (entry->hash == hash) {
+            // 获取已存在的entry的key
             PyObject *startkey = entry->key;
             /* startkey cannot be a dummy because the dummy hash field is -1 */
+            // entry里面的key不可以为dummy态
+            // 因为这相当于删除(伪删除)了，那么hash应该是-1
             assert(startkey != dummy);
+            // 如果startkey和key相等，说明指向了同一个对象
+            // 那么两者视为相等，而集合内的元素不允许重复
             if (startkey == key)
+                // 直接跳到found_active标签
                 goto found_active;
+            // 如果不是同一个对象，再比较维护的值是否相等
+            // 快分支，假设两者都是字符串你，然后进行比较
             if (PyUnicode_CheckExact(startkey)
                 && PyUnicode_CheckExact(key)
                 && _PyUnicode_EQ(startkey, key))
+                // 如果一样，跳转到found_active标签
                 goto found_active;
+            
+            // 到这里说明两者不是同一个对象，也都不是字符串
+            // 那么只能走通用的比较逻辑
             table = so->table;
+            // 增加startkey的引用计数
             Py_INCREF(startkey);
+            // 比较两个对象维护的值是否一致
             cmp = PyObject_RichCompareBool(startkey, key, Py_EQ);
+            // 减少startkey的引用计数
             Py_DECREF(startkey);
+            // 如果cmp>0，比较成功
             if (cmp > 0)                                          /* likely */
+                // 说明两个值是相同的
+                // 跳转到found_acitve标签
                 goto found_active;
             if (cmp < 0)
+                // 小于0，说明比较失败
+                // 跳转到comparison_error标签
                 goto comparison_error;
+            // 走到这里，说明两个对象不相等
             /* Continuing the search from the current entry only makes
                sense if the table and entry are unchanged; otherwise,
                we have to restart from the beginning */
+            /* 只有在table和entry不变的情况下，从当前条目继续搜索才有意义；
+               否则，我们必须从头开始 */
             if (table != so->table || entry->key != startkey)
                 goto restart;
+            // 拿到当前的mask
             mask = so->mask;                 /* help avoid a register spill */
         }
+        // 如果不能hash
         else if (entry->hash == -1)
+            // 则设置freeslot
             freeslot = entry;
 
+        // 如果当前索引值加上9小于等于当前的mask(容量-1)
+        // #define LINEAR_PROBES 9
+        // 考虑cpu的cache
         if (i + LINEAR_PROBES <= mask) {
+            // 循环9次
             for (j = 0 ; j < LINEAR_PROBES ; j++) {
                 entry++;
                 if (entry->hash == 0 && entry->key == NULL)
@@ -222,35 +263,59 @@ set_add_entry(PySetObject *so, PyObject *key, Py_hash_t hash)
             }
         }
 
+        // 程序走到这里说明索引冲突了
+        // 改变规则，重新计算索引值
         perturb >>= PERTURB_SHIFT;
+        // 计算规则和字典是一样的
         i = (i * 5 + 1 + perturb) & mask;
 
+        // 获取新索引对应的entry
         entry = &so->table[i];
+        // 如果对应的可以为NULL，说明重新计算索引之后找到可以存储的地方
         if (entry->key == NULL)
+            // 跳转到found_unused_or_dummy
             goto found_unused_or_dummy;
+        // 否则说明比较倒霉，改变规则重新映射之后，索引依旧冲突
+        // 那么继续循环，比较key是否一致等等
     }
 
   found_unused_or_dummy:
+    // 如果这个freeslot为NULL，说明是可用的
     if (freeslot == NULL)
+        // 跳转
         goto found_unused;
+    // 否则，说明是dummy态
+    // 那么我们依旧可以使用，正好废物利用
+    // used数+1
     so->used++;
+    // 设置key和hash值
     freeslot->key = key;
     freeslot->hash = hash;
     return 0;
 
+  // 发现未使用的
   found_unused:
+    // 将fill和used个数+1
     so->fill++;
     so->used++;
+    // 设置key和hash值
     entry->key = key;
     entry->hash = hash;
+    // 检查active态+dummy的entry个数是否小于mask的3/5
     if ((size_t)so->fill*5 < mask*3)
+        // 是的话，表示无需扩容
         return 0;
+    // 否则要进行扩容
+    // 如果active态的entry大于50000，那么2倍扩容，否则4倍扩容
     return set_table_resize(so, so->used>50000 ? so->used*2 : so->used*4);
 
+  // 如果是found_active，表示key重复了
+  // 直接减少了一个引用计数即可
   found_active:
     Py_DECREF(key);
     return 0;
 
+  // 比较失败，同样减少引用计数，返回-1
   comparison_error:
     Py_DECREF(key);
     return -1;
@@ -269,25 +334,33 @@ static void
 set_insert_clean(setentry *table, size_t mask, PyObject *key, Py_hash_t hash)
 {
     setentry *entry;
+    // perturb初始值为hash
     size_t perturb = hash;
+    // 计算索引
     size_t i = (size_t)hash & mask;
     size_t j;
 
     while (1) {
+        // 获取当前entry
         entry = &table[i];
         if (entry->key == NULL)
+            // 如果为空则跳转found_null设置key与hash
             goto found_null;
         if (i + LINEAR_PROBES <= mask) {
+            // 否则还是老规矩，遍历之后的9个entry
             for (j = 0; j < LINEAR_PROBES; j++) {
                 entry++;
+                // 找到空的entry，那么跳转到found_null设置key与hash
                 if (entry->key == NULL)
                     goto found_null;
             }
         }
+        // 没知道，那么改变规则，重新计算索引
         perturb >>= PERTURB_SHIFT;
         i = (i * 5 + 1 + perturb) & mask;
     }
   found_null:
+    // 设置key与hash
     entry->key = key;
     entry->hash = hash;
 }
@@ -303,31 +376,49 @@ actually be smaller than the old one.
 static int
 set_table_resize(PySetObject *so, Py_ssize_t minused)
 {
+    // 单个setentry *指针
     setentry *oldtable, *newtable, *entry;
+    // oldmask
     Py_ssize_t oldmask = so->mask;
+    // newmask
     size_t newmask;
+
+    // 是否为其申请过内存
     int is_oldtable_malloced;
+    // 将PySet_MINSIZE个entry直接copy过来
     setentry small_copy[PySet_MINSIZE];
 
+    // minused必须大于等于0
     assert(minused >= 0);
 
     /* Find the smallest table size > minused. */
     /* XXX speed-up with intrinsics */
+    // newsize不断扩大二倍，直到大于minused
+    // 之前看到的大于50000，2倍扩容，否则4倍扩容
+    // 实际上是最后的newsize是比2倍或者4倍扩容的结果要大的
     size_t newsize = PySet_MINSIZE;
     while (newsize <= (size_t)minused) {
+        // newsize最大是 PY_SSIZE_T_MAX + 1
+        // 但是一般不可能这么多元素
         newsize <<= 1; // The largest possible value is PY_SSIZE_T_MAX + 1.
     }
 
+    // 为新的table申请空间
     /* Get space for a new table. */
     oldtable = so->table;
     assert(oldtable != NULL);
     is_oldtable_malloced = oldtable != so->smalltable;
 
+    // 如果newsize和PySet_MINSZIE(这里的8)相等
     if (newsize == PySet_MINSIZE) {
         /* A large table is shrinking, or we can't get any smaller. */
+        // 拿到smalltable，就是默认初始化的8个entry数组的那个成员
         newtable = so->smalltable;
+        // 如果oldtable和newtable一样
         if (newtable == oldtable) {
+            // 并且没有dummy态的entry
             if (so->fill == so->used) {
+                // 啥也不用做
                 /* No dummies, so no point doing anything. */
                 return 0;
             }
@@ -337,12 +428,16 @@ set_table_resize(PySetObject *so, Py_ssize_t minused)
                as set_lookkey needs at least one virgin slot to
                terminate failing searches.  If fill < size, it's
                merely desirable, as dummies slow searches. */
+            // 否则的话，dummy的个数一定大于0
             assert(so->fill > so->used);
+            // 扔掉dummy态，只把oldtable中active态的entry拷贝过来
             memcpy(small_copy, oldtable, sizeof(small_copy));
+            // 将small_copy重新设置为oldtable
             oldtable = small_copy;
         }
     }
     else {
+        // 否则的话，肯定大于8，申请newisze个setentry所需要的空间
         newtable = PyMem_NEW(setentry, newsize);
         if (newtable == NULL) {
             PyErr_NoMemory();
@@ -350,23 +445,37 @@ set_table_resize(PySetObject *so, Py_ssize_t minused)
         }
     }
 
+    // newtable 肯定不等于 oldtable
     /* Make the set empty, using the new table. */
     assert(newtable != oldtable);
+    // 创建一个能容纳newsize个entry的空set
     memset(newtable, 0, sizeof(setentry) * newsize);
+    // 将mask设置为newsize-1
     so->mask = newsize - 1;
+    // 将table设置为newtable
     so->table = newtable;
 
     /* Copy the data over; this is refcount-neutral for active entries;
        dummy entries aren't copied over, of course */
+    // 获取newmask
     newmask = (size_t)so->mask;
+    // 遍历旧table的setentry数组
+    // 将setentry的key和hash全部设置到新的table里面
+    // 如果fill==used，说明没有dummy态的entry
     if (so->fill == so->used) {
         for (entry = oldtable; entry <= oldtable + oldmask; entry++) {
             if (entry->key != NULL) {
+                // 设置元素的逻辑在此函数中
                 set_insert_clean(newtable, newmask, entry->key, entry->hash);
             }
         }
     } else {
+        // 逻辑和上面一样，但是存在dummy态的entry
+        // 判断时需要多一个条件: entry->key != dummy
+        // 由于会丢弃dummy态的entry，因此扩容后fill和used相等
+        // 所以之类将used赋值给fill
         so->fill = so->used;
+        // 性能考虑，才有个分支
         for (entry = oldtable; entry <= oldtable + oldmask; entry++) {
             if (entry->key != NULL && entry->key != dummy) {
                 set_insert_clean(newtable, newmask, entry->key, entry->hash);
@@ -374,6 +483,7 @@ set_table_resize(PySetObject *so, Py_ssize_t minused)
         }
     }
 
+    // 如果已经为旧的table申请了内存，那么要将其归还给系统堆
     if (is_oldtable_malloced)
         PyMem_DEL(oldtable);
     return 0;
@@ -396,33 +506,54 @@ set_contains_entry(PySetObject *so, PyObject *key, Py_hash_t hash)
 static int
 set_discard_entry(PySetObject *so, PyObject *key, Py_hash_t hash)
 {
+    // 传入集合、key、哈希值
+
     setentry *entry;
     PyObject *old_key;
 
+    // 通过传入的key和hash找到该entry
+    // 并且entry->key == key
     entry = set_lookkey(so, key, hash);
+    // 如果entry为NULL，说明不存在此key
+    // 直接返回-1
     if (entry == NULL)
         return -1;
+    // 如果entry不为NULL，但是对应的key为NULL
+    // 返回DISCARD_NOTFOUND
     if (entry->key == NULL)
         return DISCARD_NOTFOUND;
+    // 获取要删除的key
     old_key = entry->key;
+    // 并将entry设置为dummy
     entry->key = dummy;
+    // hash设置为-1
     entry->hash = -1;
+    // 减少使用数量
     so->used--;
+    // 减少引用计数
     Py_DECREF(old_key);
+    // 返回DISCARD_FOUND
     return DISCARD_FOUND;
 }
 
 static int
 set_add_key(PySetObject *so, PyObject *key)
 {
+    // 声明一个变量，用于保存哈希值
     Py_hash_t hash;
 
+    // 类型检测，看看是否是ASCII字符串
     if (!PyUnicode_CheckExact(key) ||
         (hash = ((PyASCIIObject *) key)->hash) == -1) {
+        // 如果不是ASCII字符串
+        // 那么计算哈希值
         hash = PyObject_Hash(key);
+        // 如果计算之后的哈希值为-1
+        // 放在表示该对象不可别哈希，Python层面显然会报错
         if (hash == -1)
             return -1;
     }
+    // 底层有调用了set_add_entry，并把hash也作为参数传了进去
     return set_add_entry(so, key, hash);
 }
 
@@ -447,10 +578,12 @@ set_discard_key(PySetObject *so, PyObject *key)
 
     if (!PyUnicode_CheckExact(key) ||
         (hash = ((PyASCIIObject *) key)->hash) == -1) {
+        // 计算hash值
         hash = PyObject_Hash(key);
         if (hash == -1)
             return -1;
     }
+    // 核心调用set_discard_entry
     return set_discard_entry(so, key, hash);
 }
 
@@ -1252,43 +1385,57 @@ set_ior(PySetObject *so, PyObject *other)
 static PyObject *
 set_intersection(PySetObject *so, PyObject *other)
 {
+    // 交集运算的结果
     PySetObject *result;
     PyObject *key, *it, *tmp;
     Py_hash_t hash;
     int rv;
 
+    // 如果两个对象相同
     if ((PyObject *)so == other)
+        // 直接返回其中一个的拷贝即可
         return set_copy(so, NULL);
 
+    // 创建一个空的PySetObject * 
     result = (PySetObject *)make_new_set_basetype(Py_TYPE(so), NULL);
     if (result == NULL)
         return NULL;
 
+    // 检测other是不是PySetObject *
     if (PyAnySet_Check(other)) {
+        // 初始索引为0
         Py_ssize_t pos = 0;
         setentry *entry;
 
+        // 如果other元素的个数大于so
         if (PySet_GET_SIZE(other) > PySet_GET_SIZE(so)) {
+            // 进行交换
             tmp = (PyObject *)so;
             so = (PySetObject *)other;
             other = tmp;
         }
 
+        // 从少的那一方开始遍历
         while (set_next((PySetObject *)other, &pos, &entry)) {
+            // 拿到key和hash
             key = entry->key;
             hash = entry->hash;
+            // 传入other的key和hash，在so中去找
             rv = set_contains_entry(so, key, hash);
             if (rv < 0) {
+                // 说明不存在
                 Py_DECREF(result);
                 return NULL;
             }
             if (rv) {
+                // 存在的话设置进result里面
                 if (set_add_entry(result, key, hash)) {
                     Py_DECREF(result);
                     return NULL;
                 }
             }
         }
+        // 直接返回
         return (PyObject *)result;
     }
 
@@ -1901,9 +2048,12 @@ PyDoc_STRVAR(contains_doc, "x.__contains__(y) <==> y in x.");
 static PyObject *
 set_remove(PySetObject *so, PyObject *key)
 {
+    // 移除元素
+
     PyObject *tmpkey;
     int rv;
 
+    // 调用set_discard_key
     rv = set_discard_key(so, key);
     if (rv < 0) {
         if (!PySet_Check(key) || !PyErr_ExceptionMatches(PyExc_TypeError))
@@ -2320,11 +2470,14 @@ PySet_Discard(PyObject *set, PyObject *key)
 int
 PySet_Add(PyObject *anyset, PyObject *key)
 {
+    // 参数是两个指针
+    // 类型检测
     if (!PySet_Check(anyset) &&
         (!PyFrozenSet_Check(anyset) || Py_REFCNT(anyset) != 1)) {
         PyErr_BadInternalCall();
         return -1;
     }
+    // 本质上调用了set_add_key
     return set_add_key((PySetObject *)anyset, key);
 }
 

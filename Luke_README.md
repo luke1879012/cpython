@@ -1101,15 +1101,32 @@ typedef struct {
 
 
 
+### 行为
+
+####  **添加元素** 
+
+`PySet_Add`
 
 
 
+#### **删除元素**
+
+`set_remove`
 
 
 
+### 扩容
 
+`set_table_resize`
 
+逻辑：
 
+1. `newsize`从8开始，不断左移，直到大于`minused`
+2. 如果`newsize`等于8，扔掉`dumm`y，将`smalltable`复制过去
+3. 如果`newsize`大于8，申请`table`空间，大小为`newsize`
+4. 创建新的`setentry`，赋值`mask`、`table`
+5. 如果没有`dummy`态，直接复制过去（优化性能）
+6. 如果存在`dummy`态，删除`dummy`态的`entry`
 
 
 
