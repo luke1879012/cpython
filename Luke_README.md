@@ -1079,6 +1079,28 @@ static int numfreekeys = 0;
 
 
 
+## set
+
+实例对象：`PySetObject` [跳转](Include\setobject.h)
+
+```c
+typedef struct {
+    PyObject_HEAD
+    Py_ssize_t fill;
+    Py_ssize_t used;
+    Py_ssize_t mask;
+    setentry *table;
+    Py_hash_t hash;
+    Py_ssize_t finger;
+    setentry smalltable[PySet_MINSIZE];
+    PyObject *weakreflist;
+} PySetObject;
+```
+
+类型对象：`PySet_Type` [跳转](Objects\setobject.c)
+
+
+
 
 
 

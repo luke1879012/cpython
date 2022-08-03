@@ -24,7 +24,9 @@ either entry->key==dummy or by entry->hash==-1.
 #define PySet_MINSIZE 8
 
 typedef struct {
+    // 键
     PyObject *key;
+    // 哈希值
     Py_hash_t hash;             /* Cached hash code of the key */
 } setentry;
 
@@ -40,15 +42,19 @@ Invariants for frozensets:
 */
 
 typedef struct {
+    // 头部信息，和字典一样，肯定有其他字段充当ob_size
     PyObject_HEAD
 
+    // 等于 active态 + dummy态 的entry数量
     Py_ssize_t fill;            /* Number active and dummy entries*/
+    // active态 的entry数量
     Py_ssize_t used;            /* Number active entries */
 
     /* The table contains mask + 1 slots, and that's a power of 2.
      * We store the mask instead of the size because the mask is more
      * frequently needed.
      */
+    // mask=容量-1，通过 与运算 计算所处的槽
     Py_ssize_t mask;
 
     /* The table points to a fixed-size smalltable for small tables
@@ -56,11 +62,18 @@ typedef struct {
      * The table pointer is never NULL which saves us from repeated
      * runtime null-tests.
      */
+    // 指向setentry数组的指针
+    // 而这个setentry数组可以是下面的smalltable，也可以单独申请一块内存
     setentry *table;
+    // 集合的哈希值，只适用于frozenset
     Py_hash_t hash;             /* Only used by frozenset objects */
+    // 用于pop一个元素，search finger就是我们从包含某个元素的节点开始，找到我们希望的元素
     Py_ssize_t finger;          /* Search finger for pop() */
 
+    // 只有容量不超过8的时候，元素才会存里面；
+    // 一旦超过了8，那么会使用malloc单独申请内存
     setentry smalltable[PySet_MINSIZE];
+    // 弱引用列表
     PyObject *weakreflist;      /* List of weak references */
 } PySetObject;
 

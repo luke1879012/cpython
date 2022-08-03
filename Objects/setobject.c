@@ -1024,27 +1024,42 @@ PyDoc_STRVAR(update_doc,
 static PyObject *
 make_new_set(PyTypeObject *type, PyObject *iterable)
 {
+    // 结果指针
     PySetObject *so;
 
+    // 申请该元素所需要的内存
     so = (PySetObject *)type->tp_alloc(type, 0);
     if (so == NULL)
         return NULL;
 
+    // 初始化都为0
     so->fill = 0;
     so->used = 0;
+    // PySet_MINSIZE默认为8
+    // 而mak等于哈希表容量减1，所以初始值是7
     so->mask = PySet_MINSIZE - 1;
+    // 初始化的时候，setentry数组显然是smalltable
+    // 所以让table指向smalltable
     so->table = so->smalltable;
+    // 初始化hash值为-1
     so->hash = -1;
+    // finger为0
     so->finger = 0;
+    // 弱引用列表为NULL
     so->weakreflist = NULL;
 
+    // 以上只是初始化，如果可迭代对象不为NULL
+    // 那么把元素依次设置到集合中
     if (iterable != NULL) {
+        // 该过程是通过set_update_internal函数实现的
+        // 该函数内部会遍历iterable，将迭代出的元素依次添加到集合里面
         if (set_update_internal(so, iterable)) {
             Py_DECREF(so);
             return NULL;
         }
     }
 
+    // 返回初始化完成的set
     return (PyObject *)so;
 }
 
@@ -2252,6 +2267,7 @@ PyTypeObject PyFrozenSet_Type = {
 PyObject *
 PySet_New(PyObject *iterable)
 {
+    // 调用make_new_set
     return make_new_set(&PySet_Type, iterable);
 }
 
