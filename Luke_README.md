@@ -1018,6 +1018,57 @@ i = (i*5 + perturb + 1) & mask;
 
 #### 删除键值对
 
+`PyDict_DelItem`
+
+
+
+### 扩容机制
+
+#### `ma_used`与`dk_nentries`
+
+PyDictObject里面有一个ma_used字段，它维护的是键值对的数量，充当ob_size；
+
+而在PyDictKeysObject里面有一个dk_nentries，它维护键值对数组中已使用的entry数量，而这个entry又可以理解为键值对 
+
+
+
+如果不涉及元素的删除，那么两者的值会是一样的。而一旦删除某个已存在的key，那么ma_used会**减1**，而dk_nentries则保持不变。 
+
+
+
+首先ma_used**减1**表示键值对数量相比之前少了一个，这显然符合我们在Python里面使用字典时的表现；但我们知道元素的删除其实是伪删除，会将对应的entry从active态变成dummy态，然而entry的总数量并没有改变。
+
+
+ ma_used其实等于active态的entry总数；如果将dk_nentries减去dummy态的entry总数，那么得到的就是ma_used。 
+
+
+
+
+
+#### 扩容
+
+ 当已使用entry的数量达到了总容量的2/3时，会发生扩容。 
+
+逻辑：
+
+1. 确定哈希表的容量，容量必须是2的幂次方，并且大于`ma_used*3`
+2. 重新申请内存
+3. 判断`dk_nentries`是否与`ma_used`相等，如果相等，说明没有`dummy`态的entry，直接复制过去；如果不相等，只需要复制 `me_value==NULL`的entry（`active`态的entry）
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

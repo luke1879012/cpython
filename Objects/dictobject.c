@@ -424,6 +424,7 @@ dictkeys_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
  * GROWTH_RATE was set to used*2 in version 3.3.0
  * GROWTH_RATE was set to used*2 + capacity/2 in 3.4.0-3.6.0.
  */
+// 增长率
 #define GROWTH_RATE(d) ((d)->ma_used*3)
 
 #define ENSURE_ALLOWS_DELETIONS(d) \
@@ -1067,6 +1068,8 @@ find_empty_slot(PyDictKeysObject *keys, Py_hash_t hash)
 static int
 insertion_resize(PyDictObject *mp)
 {
+    // 本质上调用了dictresize
+    // 传入 PyDictObject * 和增长率
     return dictresize(mp, GROWTH_RATE(mp));
 }
 
@@ -1256,13 +1259,23 @@ but can be resplit by make_keys_shared().
 static int
 dictresize(PyDictObject *mp, Py_ssize_t minsize)
 {
+    // 新的哈希表容量，以及当前老哈希表的键值对个数
     Py_ssize_t newsize, numentries;
+    // 老哈希表的ma_keys
     PyDictKeysObject *oldkeys;
+    // 老哈希表的ma_values
     PyObject **oldvalues;
+    // 老哈希表的dk_entries，新哈希表的dk_entries
     PyDictKeyEntry *oldentries, *newentries;
 
     /* Find the smallest table size > minused. */
+    /* 确定哈希表的大小 */
+    // PyDict_MINSIZE等于8，所以哈希表的容量最少是8
+    // 然后不断左移一位，也就是乘上2
+    // 因为哈希表的容量必须是2的幂次方
     for (newsize = PyDict_MINSIZE;
+        // 知道newsize大于等于minsize为止
+        // 这个minsize就是我们传递的参数，等于ma_used*3
          newsize < minsize && newsize > 0;
          newsize <<= 1)
         ;
@@ -1271,6 +1284,7 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
         return -1;
     }
 
+    // 获取老哈希表的ma_keys
     oldkeys = mp->ma_keys;
 
     /* NOTE: Current odict checks mp->ma_keys to detect resize happen.
@@ -1279,20 +1293,32 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
      */
 
     /* Allocate a new table. */
+    // 创建能够容纳newsize个entry的内存空间
     mp->ma_keys = new_keys_object(newsize);
     if (mp->ma_keys == NULL) {
+        // 把老哈希表的key拷贝过去
         mp->ma_keys = oldkeys;
         return -1;
     }
     // New table must be large enough.
     assert(mp->ma_keys->dk_usable >= mp->ma_used);
+    // 如果之前设置了探测函数
+    // 那么也作为新哈希表的探测函数
     if (oldkeys->dk_lookup == lookdict)
         mp->ma_keys->dk_lookup = lookdict;
 
+    // 获取当前键值对的个数
     numentries = mp->ma_used;
+    // 获取老哈希表的dk_entries
     oldentries = DK_ENTRIES(oldkeys);
+    // 获取新哈希表的dk_entries
     newentries = DK_ENTRIES(mp->ma_keys);
+    // 获取新哈希表的ma_values
     oldvalues = mp->ma_values;
+    // 如果oldvalues不为NULL，说明是一个分离表
+    // 分离表的特点是key是字符串
+    // 并且分离表不支持扩容，如果想扩容
+    // 那么需要把分离表转换成结合表
     if (oldvalues != NULL) {
         /* Convert split table into new combined table.
          * We must incref keys; we can transfer values.
@@ -1300,6 +1326,8 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
          */
         for (Py_ssize_t i = 0; i < numentries; i++) {
             assert(oldvalues[i] != NULL);
+            // 获取ma_values数组里面的元素
+            // 依次设置到PyDiceKeyEntry对象里面去
             PyDictKeyEntry *ep = &oldentries[i];
             PyObject *key = ep->me_key;
             Py_INCREF(key);
@@ -1308,17 +1336,28 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
             newentries[i].me_value = oldvalues[i];
         }
 
+        // 减少原来对oldkeys的引用计数
         dictkeys_decref(oldkeys);
+        // 将ma_values设置为NULL
         mp->ma_values = NULL;
+        // 因为所有values都存在了PyDictKeyEntry对象的me_values里面
         if (oldvalues != empty_values) {
             free_values(oldvalues);
         }
     }
+    // 否则的话说明这本身就是一个结合表
     else {  // combined table.
+        // numentries等于mp->ma_used，也就是键值对的个数
+        // 如果等于oldkeys->dk_nentries
+        // 证明没有dummy态的entry
         if (oldkeys->dk_nentries == numentries) {
+            // 那么直接将旧的entries拷贝到新的entries里面去
             memcpy(newentries, oldentries, numentries * sizeof(PyDictKeyEntry));
         }
+        // 否则说明存在dummy态的entry
         else {
+            // active态的entry搬到新table中
+            // dummy态的entry则被丢弃
             PyDictKeyEntry *ep = oldentries;
             for (Py_ssize_t i = 0; i < numentries; i++) {
                 while (ep->me_value == NULL)
@@ -1327,6 +1366,7 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
             }
         }
 
+        // 字典的缓存池操作
         assert(oldkeys->dk_lookup != lookdict_split);
         assert(oldkeys->dk_refcnt == 1);
         if (oldkeys->dk_size == PyDict_MINSIZE &&
@@ -1340,6 +1380,7 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
         }
     }
 
+    // 建立哈希表索引
     build_indices(mp->ma_keys, newentries, numentries);
     mp->ma_keys->dk_usable -= numentries;
     mp->ma_keys->dk_nentries = numentries;
