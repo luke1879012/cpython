@@ -1132,7 +1132,15 @@ typedef struct {
 
 
 
+# 内置函数
 
+所有的内置函数都在 `Python\bltinmodule.c` 中  [跳转](Python\bltinmodule.c)
+
+
+
+## iter/next
+
+ 迭代器本质上只是对原始数据的一层封装罢了 
 
 
 

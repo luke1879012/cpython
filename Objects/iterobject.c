@@ -172,6 +172,7 @@ PyTypeObject PySeqIter_Type = {
 
 /* -------------------------------------- */
 
+// calliterobject对象
 typedef struct {
     PyObject_HEAD
     PyObject *it_callable; /* Set to NULL when iterator is exhausted */

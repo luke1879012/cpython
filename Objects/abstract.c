@@ -2599,17 +2599,39 @@ _PyObject_RealIsSubclass(PyObject *derived, PyObject *cls)
 PyObject *
 PyObject_GetIter(PyObject *o)
 {
+    // 获取可迭代对象的类型对象
     PyTypeObject *t = o->ob_type;
+    // 类型对象定义的操作，决定了实例对象的行为
+    // 实例对象调用的那些方法都是定义在类型对象里面的
+    // 还是那句话: obj.func() is type(obj).func(obj)
     getiterfunc f;
 
+    // 所以这里是获取类型对象的tp_iter成员
+    // 也就是Python中的 __iter__
     f = t->tp_iter;
+    // 如果f为NULL
+    // 说明改类型对象内部的tp_iter成员被初始化为NULL
+    // 即内部没有定义 __iter__
+    // 像str、tuple、list等类型对象，它们的tp_iter成员都是不为NULL的
     if (f == NULL) {
+        // 如果 tp_iter 为NULL，那么解释器会退而求其次
+        // 检测该类型对象中是否定义了 __getitem__
+        // 下面的PySequence_Check负责检测类型对象是否实现了 __getitem__
+        // __getitem__ 对应 tp_as_sequence->sq_item
         if (PySequence_Check(o))
+            // 如果定义了，那么直接调用 PySeqIter_New
+            // 得到一个seqiterobject对象
             return PySeqIter_New(o);
+        // 走到这里说明该类型对象既没有 __iter__、也没有__getitem__
+        // 因此它的实例对象不具备可迭代的性质，于是抛出异常
         return type_error("'%.200s' object is not iterable", o);
     }
     else {
+        // 否则，说明定义了__iter__，于是直接调用
+        // PyType(o)->tp_iter(o) 返回对应的迭代器
         PyObject *res = (*f)(o);
+        // 但如果返回值res不为NULL、并且还不是迭代器
+        // 证明 __iter__ 的返回值有问题，于是抛出异常
         if (res != NULL && !PyIter_Check(res)) {
             PyErr_Format(PyExc_TypeError,
                          "iter() returned non-iterator "
@@ -2618,6 +2640,7 @@ PyObject_GetIter(PyObject *o)
             Py_DECREF(res);
             res = NULL;
         }
+        // 返回res
         return res;
     }
 }

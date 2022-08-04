@@ -3288,9 +3288,12 @@ PyTypeObject PyList_Type = {
 
 /*********************** List Iterator **************************/
 
+// 列表的迭代器
 typedef struct {
     PyObject_HEAD
+    // 记录的索引
     Py_ssize_t it_index;
+    // 指向创建该迭代器的列表
     PyListObject *it_seq; /* Set to NULL when iterator is exhausted */
 } listiterobject;
 
@@ -3313,6 +3316,7 @@ static PyMethodDef listiter_methods[] = {
     {NULL,              NULL}           /* sentinel */
 };
 
+// 列表的迭代器类型
 PyTypeObject PyListIter_Type = {
     PyVarObject_HEAD_INIT(&PyType_Type, 0)
     "list_iterator",                            /* tp_name */
@@ -3384,22 +3388,35 @@ listiter_traverse(listiterobject *it, visitproc visit, void *arg)
 static PyObject *
 listiter_next(listiterobject *it)
 {
+    // 列表
     PyListObject *seq;
+    // 元素
     PyObject *item;
 
     assert(it != NULL);
+    // 拿到具体对应的列表
     seq = it->it_seq;
+    // 如果seq为NULL，证明迭代器已经迭代完毕
+    // 否则它不会为NULL
     if (seq == NULL)
         return NULL;
     assert(PyList_Check(seq));
 
+    // 如果索引小于列表的长度，证明尚未迭代完毕
     if (it->it_index < PyList_GET_SIZE(seq)) {
+        // 通过索引获取指定元素
         item = PyList_GET_ITEM(seq, it->it_index);
+        // it_index 自增1
         ++it->it_index;
+        // 增加引用计数
         Py_INCREF(item);
+        // 返回
         return item;
     }
 
+    // 否则的话，说明此次索引正好已经超出最大范围
+    // 意味着迭代完毕了，将it_seq设置为NULL
+    // 并减少它的引用计数，然后返回
     it->it_seq = NULL;
     Py_DECREF(seq);
     return NULL;

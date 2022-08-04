@@ -1567,32 +1567,56 @@ builtin_next(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 {
     PyObject *it, *res;
 
+    // 同样接受一个参数或者两个参数
+    // 因为调用next函数时，可以传入一个默认值
+    // 表示当迭代器没有元素可以迭代的试试，会返回指定默认值
     if (!_PyArg_CheckPositional("next", nargs, 1, 2))
         return NULL;
 
     it = args[0];
+    // 第一个参数必须是一个迭代器
     if (!PyIter_Check(it)) {
+        // 否则的话，抛出TypeError
+        // 表示第一个参数传递的不是一个迭代器
         PyErr_Format(PyExc_TypeError,
             "'%.200s' object is not an iterator",
             it->ob_type->tp_name);
         return NULL;
     }
 
+    // it->ob_type表示获取类型队形，也就是该迭代器的类型
+    // 然后再获取tp_iternext成员，相当于 __next__
+    // 拿到函数指针之后，传入迭代器进行调用
     res = (*it->ob_type->tp_iternext)(it);
+    // 如果res不为NULL，那么证明迭代到值了，直接返回
     if (res != NULL) {
         return res;
     } else if (nargs > 1) {
+        // 否则的话，说明res==NULL，也就是有可能出错了
+        // 那么看nargs是否大于1，如果大于1，说明设置了默认值
         PyObject *def = args[1];
+        // 如果出现异常
         if (PyErr_Occurred()) {
+            // 那么就看该异常是不是迭代完毕时所产生的StopIteration异常
             if(!PyErr_ExceptionMatches(PyExc_StopIteration))
+                // 如果不是，说明Python程序的逻辑有问题
+                // 于是直接return NULL，结束执行
+                // 然后再 Python 里面我们会看到打印到stderr中的异常信息
                 return NULL;
+            // 如果是StopIteration，证明异常完毕了
+            // 但设置了默认值，那么应该返回默认值
+            // 而不应该抛出 StopIteration， 于是将异常回溯栈给清空
             PyErr_Clear();
         }
+        // 然后增加默认值的引用计数，并返回
         Py_INCREF(def);
         return def;
     } else if (PyErr_Occurred()) {
+        // 走到这里说明res==NULL，并且没有指定默认值
+        // 那么当异常发生时，将异常直接抛出
         return NULL;
     } else {
+        // 都不是的话，直接抛出 StopIteration
         PyErr_SetNone(PyExc_StopIteration);
         return NULL;
     }
@@ -1703,17 +1727,34 @@ builtin_iter(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
 {
     PyObject *v;
 
+    // iter函数要么接受一个参数，要么接受两个参数
     if (!_PyArg_CheckPositional("iter", nargs, 1, 2))
         return NULL;
     v = args[0];
     if (nargs == 1)
+        // 如果接受一个参数
+        // 那么直接使用 PyObject_GetIter 获取对应的迭代器即可
+        // 可迭代对象的类型不同，那么得到的迭代器也不同
         return PyObject_GetIter(v);
+    // 如果接受的不是一个参数，那么一定是两个参数
+    // 如果是两个参数，那么第一个参数一定是可调用的
     if (!PyCallable_Check(v)) {
         PyErr_SetString(PyExc_TypeError,
                         "iter(v, w): v must be callable");
         return NULL;
     }
+    // 获取哨兵
     PyObject *sentinel = args[1];
+    // 调用PyCallIter_New
+    // 得到一个可调用的迭代器，calliterobject对象
+    /*
+    位于 Objects/iterobject.c 中
+        typedef struct {
+            PyObject_HEAD
+            PyObject *it_callable; 
+            PyObject *it_sentinel; 
+        } calliterobject;
+    */
     return PyCallIter_New(v, sentinel);
 }
 
