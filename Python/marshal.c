@@ -38,6 +38,7 @@ module marshal
 #define MAX_MARSHAL_STACK_DEPTH 2000
 #endif
 
+// 定义的标识
 #define TYPE_NULL               '0'
 #define TYPE_NONE               'N'
 #define TYPE_FALSE              'F'
@@ -77,8 +78,12 @@ module marshal
 #define WFERR_NESTEDTOODEEP 2
 #define WFERR_NOMEMORY 3
 
+// FILE 是C自带的文件句柄
+// 可以把WFILE看成是FILE的包装
 typedef struct {
+    // 文件句柄
     FILE *fp;
+    // 下面的字段在写入信息的时候会看到
     int error;  /* see WFERR_* values */
     int depth;
     PyObject *str;
@@ -172,6 +177,7 @@ w_short(int x, WFILE *p)
 static void
 w_long(long x, WFILE *p)
 {
+    // 真正的写入
     w_byte((char)( x      & 0xff), p);
     w_byte((char)((x>> 8) & 0xff), p);
     w_byte((char)((x>>16) & 0xff), p);
@@ -349,6 +355,7 @@ w_object(PyObject *v, WFILE *p)
         p->error = WFERR_NESTEDTOODEEP;
     }
     else if (v == NULL) {
+        // 一些特殊变量调用w_byte
         w_byte(TYPE_NULL, p);
     }
     else if (v == Py_None) {
@@ -367,6 +374,7 @@ w_object(PyObject *v, WFILE *p)
         w_byte(TYPE_TRUE, p);
     }
     else if (!w_ref(v, &flag, p))
+        // 字典、列表等会调用这个
         w_complex_object(v, flag, p);
 
     p->depth--;
@@ -377,6 +385,7 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
 {
     Py_ssize_t i, n;
 
+    // 如果是整数的话，执行整数的写入逻辑
     if (PyLong_CheckExact(v)) {
         long x = PyLong_AsLong(v);
         if ((x == -1)  && PyErr_Occurred()) {
@@ -399,6 +408,7 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
             }
         }
     }
+    // 如果是浮点数的话，执行浮点数的写入逻辑
     else if (PyFloat_CheckExact(v)) {
         if (p->version > 1) {
             W_TYPE(TYPE_BINARY_FLOAT, p);
@@ -409,6 +419,7 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
             w_float_str(PyFloat_AS_DOUBLE(v), p);
         }
     }
+    // 如果是复数的话，执行复数的写入逻辑
     else if (PyComplex_CheckExact(v)) {
         if (p->version > 1) {
             W_TYPE(TYPE_BINARY_COMPLEX, p);
@@ -421,10 +432,12 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
             w_float_str(PyComplex_ImagAsDouble(v), p);
         }
     }
+    // 如果是字节序列的话，执行字节序列的写入逻辑
     else if (PyBytes_CheckExact(v)) {
         W_TYPE(TYPE_STRING, p);
         w_pstring(PyBytes_AS_STRING(v), PyBytes_GET_SIZE(v), p);
     }
+    // 如果是字符串的话，执行字符串的写入逻辑
     else if (PyUnicode_CheckExact(v)) {
         if (p->version >= 4 && PyUnicode_IS_ASCII(v)) {
             int is_short = PyUnicode_GET_LENGTH(v) < 256;
@@ -461,6 +474,7 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
             Py_DECREF(utf8);
         }
     }
+    // 如果是元组的话，执行元组的写入逻辑
     else if (PyTuple_CheckExact(v)) {
         n = PyTuple_Size(v);
         if (p->version >= 4 && n < 256) {
@@ -475,14 +489,19 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
             w_object(PyTuple_GET_ITEM(v, i), p);
         }
     }
+    // 如果是列表的话，执行列表的写入逻辑
     else if (PyList_CheckExact(v)) {
+        // 写入类型
         W_TYPE(TYPE_LIST, p);
+        // 写入大小
         n = PyList_GET_SIZE(v);
         W_SIZE(n, p);
         for (i = 0; i < n; i++) {
+            // 遍历，一个个写进去
             w_object(PyList_GET_ITEM(v, i), p);
         }
     }
+    // 如果是字典的话，执行字典的写入逻辑
     else if (PyDict_CheckExact(v)) {
         Py_ssize_t pos;
         PyObject *key, *value;
@@ -495,6 +514,7 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
         }
         w_object((PyObject *)NULL, p);
     }
+    // 如果是集合的话，执行集合的写入逻辑
     else if (PyAnySet_CheckExact(v)) {
         PyObject *value, *it;
 
@@ -526,6 +546,8 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
             return;
         }
     }
+    // 如果是PyCodeObject对象的话
+    // 执行PyCodeObject对象的写入逻辑
     else if (PyCode_Check(v)) {
         PyCodeObject *co = (PyCodeObject *)v;
         W_TYPE(TYPE_CODE, p);
@@ -546,6 +568,7 @@ w_complex_object(PyObject *v, char flag, WFILE *p)
         w_long(co->co_firstlineno, p);
         w_object(co->co_lnotab, p);
     }
+    // 如果是Buffer的话，执行Buffer的写入逻辑
     else if (PyObject_CheckBuffer(v)) {
         /* Write unknown bytes-like objects as a bytes object */
         Py_buffer view;
@@ -604,21 +627,32 @@ w_clear_refs(WFILE *wf)
 void
 PyMarshal_WriteLongToFile(long x, FILE *fp, int version)
 {
+    // 首先，下入magic number和创建时间
+
+    // magic number和创建时间，只是一个整数
+    // 在写入的时候，使用char [4]来保存
     char buf[4];
+    // 声明一个WFILE类型变量wf
     WFILE wf;
+    // 内存初始化
     memset(&wf, 0, sizeof(wf));
+    // 初始化内部成员
     wf.fp = fp;
     wf.ptr = wf.buf = buf;
     wf.end = wf.ptr + sizeof(buf);
     wf.error = WFERR_OK;
     wf.version = version;
+    // 调用w_long将x、也就是版本信息或者时间写到wf里面去
     w_long(x, &wf);
+    // 刷到磁盘上
     w_flush(&wf);
 }
 
 void
 PyMarshal_WriteObjectToFile(PyObject *x, FILE *fp, int version)
 {
+    // 写入PyCodeObject对象
+
     char buf[BUFSIZ];
     WFILE wf;
     memset(&wf, 0, sizeof(wf));
@@ -629,6 +663,7 @@ PyMarshal_WriteObjectToFile(PyObject *x, FILE *fp, int version)
     wf.version = version;
     if (w_init_refs(&wf, version))
         return; /* caller mush check PyErr_Occurred() */
+    // 这里不一样
     w_object(x, &wf);
     w_clear_refs(&wf);
     w_flush(&wf);

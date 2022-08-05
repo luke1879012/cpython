@@ -1538,10 +1538,52 @@ exec(statement)  # a等于123
 
 
 
-## **字节码与反编译**
+### **字节码与反编译**
 
 操作指令 [跳转](Include\opcode.h)
+
+
+
+## **pyc文件**
+
+### 触发条件
+
+ import会触发pyc的生成 
+
+
+
+
+
+###  **pyc文件里面包含哪些内容** 
+
+ **1. magic number** 
+
+这是Python定义的一个整数值，不同版本的Python会定义不同的magic number，这个值是为了保证Python能够加载正确的pyc。 
+
+**2. pyc的创建时间** 
+
+这个很好理解，判断源代码的最后修改时间和pyc文件的创建时间。如果pyc文件的创建时间比源代码的修改时间要早，说明在生成pyc之后，源代码被修改了，那么会重新编译并生成新的pyc，而反之则会直接加载已存在的pyc。 
+
+**3. PyCodeObject对象** 
+
+
+
+
+
+### **pyc文件的写入**
+
+[跳转](Python\marshal.c)
+
+
+
+### **PyCodeObject的包含关系**
+
+
  
+
+
+
+
 
 
 
