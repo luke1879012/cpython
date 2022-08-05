@@ -1579,11 +1579,30 @@ exec(statement)  # a等于123
 ### **PyCodeObject的包含关系**
 
 
- 
 
 
 
+## 虚拟机的执行环境
 
+ 运行时栈的地址是从高地址向低地址延伸的 
+
+ **栈指针(rsp)**和**帧指针(rbp)** 
+
+`rsp`: 指向栈顶
+
+`rbp`: 当前栈
+
+
+
+###  **栈帧的底层结构** 
+
+` PyFrameObject `  [跳转](Include\frameobject.h)
+
+
+
+### **在Python中访问PyFrameObject**
+
+ 可以通过inspect模块。 
 
 
 

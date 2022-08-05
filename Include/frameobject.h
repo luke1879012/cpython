@@ -14,34 +14,54 @@ typedef struct {
 } PyTryBlock;
 
 typedef struct _frame {
+    // 可变对象的头部信息
     PyObject_VAR_HEAD
+    // 上一级栈帧，也就是调用者的栈帧
     struct _frame *f_back;      /* previous frame, or NULL */
+    // PyCodeObject对象
+    // 通过栈帧的f_code属性可以获取对应的PyCodeObject对象
     PyCodeObject *f_code;       /* code segment */
+    // builtin名字空间，一个PyDictObject对象
     PyObject *f_builtins;       /* builtin symbol table (PyDictObject) */
+    // global名字空间，一个PyDictObject对象
     PyObject *f_globals;        /* global symbol table (PyDictObject) */
+    // local名字空间，一个PyDictObject对象
     PyObject *f_locals;         /* local symbol table (any mapping) */
+    // 运行时的栈底位置
     PyObject **f_valuestack;    /* points after the last local */
     /* Next free slot in f_valuestack.  Frame creation sets to f_valuestack.
        Frame evaluation usually NULLs it, but a frame that yields sets it
        to the current stack top. */
+    // 运行时的栈顶位置
     PyObject **f_stacktop;
+    // 回溯函数，打印异常栈
     PyObject *f_trace;          /* Trace function */
+    // 是否触发每一行的回溯事件
     char f_trace_lines;         /* Emit per-line trace events? */
+    // 是否触发每一个操作码的回溯事件
     char f_trace_opcodes;       /* Emit per-opcode trace events? */
 
+    // 是否是基于生成器的PyCodeObject构建的栈帧
     /* Borrowed reference to a generator, or NULL */
     PyObject *f_gen;
 
+    // 上一条已执行完毕的指令在f_code中的偏移量
     int f_lasti;                /* Last instruction if called */
     /* Call PyFrame_GetLineNumber() instead of reading this field
        directly.  As of 2.3 f_lineno is only valid when tracing is
        active (i.e. when f_trace is set).  At other times we use
        PyCode_Addr2Line to calculate the line from the current
        bytecode index. */
+    // 当前字节码对应的源码行号
     int f_lineno;               /* Current line number */
+    // 当前指令在栈f_blockstack中的索引
     int f_iblock;               /* index in f_blockstack */
+    // 当前栈帧是否仍在执行
     char f_executing;           /* whether the frame is still executing */
+    // 用于try和loop代码块
     PyTryBlock f_blockstack[CO_MAXBLOCKS]; /* for try and loop blocks */
+    // 动态内存
+    // 维护"局部变量+cell对象集合+free对象集合+运行时栈"所需要的空间
     PyObject *f_localsplus[1];  /* locals+stack, dynamically sized */
 } PyFrameObject;
 
