@@ -21,30 +21,50 @@ typedef struct _PyOpcache _PyOpcache;
 
 /* Bytecode object */
 typedef struct {
+    // 头部信息
     PyObject_HEAD
+    // 可以通过位置参数传递的参数个数
     int co_argcount;            /* #arguments, except *args */
+    // 只能通过位置参数传递的参数个数 (Python3.8新增)
     int co_posonlyargcount;     /* #positional only arguments */
+    // 只能通过关键字参数传递的参数个数
     int co_kwonlyargcount;      /* #keyword only arguments */
+    // 代码块中局部变量的个数，也包括参数
     int co_nlocals;             /* #local variables */
+    // 执行该段代码块需要的栈空间
     int co_stacksize;           /* #entries needed for evaluation stack */
+    // 参数类型标识
     int co_flags;               /* CO_..., see below */
+    // 代码块对应的文件的行号
     int co_firstlineno;         /* first source line number */
+    // 指令集，也就是字节码，它是一个bytes对象
     PyObject *co_code;          /* instruction opcodes */
+    // 常量池，一个元组，保存代码块中的所有常量
     PyObject *co_consts;        /* list (constants used) */
+    // 一个元组，保存代码块中引用的其他作用域的变量
     PyObject *co_names;         /* list of strings (names used) */
+    // 一个元组，保存当前作用域中的变量
     PyObject *co_varnames;      /* tuple of strings (local variable names) */
+    // 内层函数引用的外层函数的作用域中的变量
     PyObject *co_freevars;      /* tuple of strings (free variable names) */
+    // 外层函数的作用域中被内层函数引用的变量
     PyObject *co_cellvars;      /* tuple of strings (cell variable names) */
     /* The rest aren't used in either hash or comparisons, except for co_name,
        used in both. This is done to preserve the name and line number
        for tracebacks and debuggers; otherwise, constant de-duplication
        would collapse identical functions/lambdas defined on different lines.
     */
+    // 暂时不管
     Py_ssize_t *co_cell2arg;    /* Maps cell vars which are arguments. */
+    // 代码块所在的文件名
     PyObject *co_filename;      /* unicode (where it was loaded from) */
+    // 代码块的名字，通常是函数名、类名、文件名
     PyObject *co_name;          /* unicode (name, for reference) */
+    // 字节码指令与python源代码的行号之间的对应关系
+    // 以PyByteObject的形式
     PyObject *co_lnotab;        /* string (encoding addr<->lineno mapping) See
                                    Objects/lnotab_notes.txt for details. */
+    // 剩下的暂不关注
     void *co_zombieframe;       /* for optimization only (see frameobject.c) */
     PyObject *co_weakreflist;   /* to support weakrefs to code objects */
     /* Scratch space for extra data relating to the code object.

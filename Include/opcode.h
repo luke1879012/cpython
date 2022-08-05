@@ -7,6 +7,7 @@ extern "C" {
 
 
     /* Instruction opcodes for compiled code */
+// 操作指令
 #define POP_TOP                   1
 #define ROT_TWO                   2
 #define ROT_THREE                 3

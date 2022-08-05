@@ -1146,6 +1146,407 @@ typedef struct {
 
 
 
+# Python虚拟机
+
+## 基本流程
+
+### 基本流程
+
+解释器执行py文件的流程：
+
+1. 首先将文件里面的内容读取出来
+2. 读取文件里面的内容之后会对其进行分词，将源代码切分成一个一个的token
+3. 然后Python编译器会对token进行语法解析，建立抽象语法树（AST，abstract syntax tree）
+4. 编译器再将得到的AST编译成PyCodeObject对象
+5. 最终由Python虚拟机来执行字节码
+
+
+
+###  Python编译器、Python虚拟机 、Python解释器
+
+ **Python解释器=Python编译器+Python虚拟机** 
+
+* Python编译器：负责将Python源代码编译成`PyCodeObject`对象
+* Python虚拟机：执行`PyCodeObject`对象
+
+
+
+之所以要存在编译，是为了提前分配好常量、能够让虚拟机更快速地执行，而且还可以尽早检测出语法上的错误。 
+
+
+
+
+
+###  **PyCodeObject对象和pyc文件的关系** 
+
+ 在Python开发时，我们肯定都见过这个pyc文件，它一般位于`__pycache__`目录中
+
+ pyc文件里面的内容是PyCodeObject对象。 
+
+在程序运行期间，编译结果存在于内存的PyCodeObject对象当中，而Python结束运行之后，编译结果又被保存到了pyc文件当中。当下一次运行的时候，Python会根据pyc文件中记录的编译结果直接建立内存中的PyCodeObject对象，而不需要再度重新编译了，当然前提是没有对源文件进行修改。 
+
+
+
+
+
+###  **PyCodeObject的底层结构** 
+
+路径：`Include\code.h`  [跳转](Include\code.h)
+
+```c
+typedef struct {
+    PyObject_HEAD
+    int co_argcount;            /* #arguments, except *args */
+    int co_posonlyargcount;     /* #positional only arguments */
+    int co_kwonlyargcount;      /* #keyword only arguments */
+    int co_nlocals;             /* #local variables */
+    int co_stacksize;           /* #entries needed for evaluation stack */
+    int co_flags;               /* CO_..., see below */
+    int co_firstlineno;         /* first source line number */
+    PyObject *co_code;          /* instruction opcodes */
+    PyObject *co_consts;        /* list (constants used) */
+    PyObject *co_names;         /* list of strings (names used) */
+    PyObject *co_varnames;      /* tuple of strings (local variable names) */
+    PyObject *co_freevars;      /* tuple of strings (free variable names) */
+    PyObject *co_cellvars;      /* tuple of strings (cell variable names) */
+    /* The rest aren't used in either hash or comparisons, except for co_name,
+       used in both. This is done to preserve the name and line number
+       for tracebacks and debuggers; otherwise, constant de-duplication
+       would collapse identical functions/lambdas defined on different lines.
+    */
+    Py_ssize_t *co_cell2arg;    /* Maps cell vars which are arguments. */
+    PyObject *co_filename;      /* unicode (where it was loaded from) */
+    PyObject *co_name;          /* unicode (name, for reference) */
+    PyObject *co_lnotab;        /* string (encoding addr<->lineno mapping) See
+                                   Objects/lnotab_notes.txt for details. */
+    void *co_zombieframe;       /* for optimization only (see frameobject.c) */
+    PyObject *co_weakreflist;   /* to support weakrefs to code objects */
+    /* Scratch space for extra data relating to the code object.
+       Type is a void* to keep the format private in codeobject.c to force
+       people to go through the proper APIs. */
+    void *co_extra;
+
+    /* Per opcodes just-in-time cache
+     *
+     * To reduce cache size, we use indirect mapping from opcode index to
+     * cache object:
+     *   cache = co_opcache[co_opcache_map[next_instr - first_instr] - 1]
+     */
+
+    // co_opcache_map is indexed by (next_instr - first_instr).
+    //  * 0 means there is no cache for this opcode.
+    //  * n > 0 means there is cache in co_opcache[n-1].
+    unsigned char *co_opcache_map;
+    _PyOpcache *co_opcache;
+    int co_opcache_flag;  // used to determine when create a cache.
+    unsigned char co_opcache_size;  // length of co_opcache.
+} PyCodeObject;
+```
+
+
+
+ 一个**code block**对应一个**名字空间(或者说作用域)**、同时也对应一个**PyCodeObject对象** 
+
+
+
+##  **PyCodeObject** 
+
+ **co_argcount：可以通过位置参数传递的参数个数** 
+
+```python
+def foo(a, b, c=3):
+    pass
+print(foo.__code__.co_argcount)  # 3
+
+def bar(a, b, *args):
+    pass
+print(bar.__code__.co_argcount)  # 2
+
+def func(a, b, *args, c):
+    pass
+print(func.__code__.co_argcount)  # 2
+```
+
+
+
+ **co_posonlyargcount：只能通过位置参数传递的参数个数，Python3.8新增** 
+
+```python
+def foo(a, b, c):
+    pass
+print(foo.__code__.co_posonlyargcount)  # 0
+
+def bar(a, b, /, c):
+    pass
+print(bar.__code__.co_posonlyargcount)  # 2
+```
+
+
+
+ **co_kwonlyargcount：只能通过关键字参数传递的参数个数** 
+
+```python
+def foo(a, b=1, c=2, *, d, e):
+    pass
+print(foo.__code__.co_kwonlyargcount)  # 2
+```
+
+
+
+ **co_nlocals：代码块中局部变量的个数，也包括参数** 
+
+```python
+def foo(a, b, *, c):
+    name = "xxx"
+    age = 16
+    gender = "f"
+    c = 33
+
+print(foo.__code__.co_nlocals)  # 6
+```
+
+
+
+ **co_stacksize：执行该段代码块需要的栈空间** 
+
+```python
+def foo(a, b, *, c):
+    name = "xxx"
+    age = 16
+    gender = "f"
+    c = 33
+
+print(foo.__code__.co_stacksize)  # 1
+```
+
+
+
+ **co_flags：参数类型标识** 
+
+```python
+def foo1():
+    pass
+# 结果全部为假
+print(foo1.__code__.co_flags & 0x04)  # 0
+print(foo1.__code__.co_flags & 0x08)  # 0
+
+def foo2(*args):
+    pass
+# co_flags & 0x04 为真，因为出现了 *args
+print(foo2.__code__.co_flags & 0x04)  # 4
+print(foo2.__code__.co_flags & 0x08)  # 0
+
+def foo3(*args, **kwargs):
+    pass
+# 显然 co_flags & 0x04 和 co_flags & 0x08 均为真
+print(foo3.__code__.co_flags & 0x04)  # 4
+print(foo3.__code__.co_flags & 0x08)  # 8
+```
+
+co_flags 可以做的事情并不止这么简单，它还能检测一个函数的类型。比如函数内部出现了 yield，那么它就是一个生成器函数，调用之后可以得到一个生成器；使用 async def 定义，那么它就是一个协程函数，调用之后可以得到一个协程。 
+
+
+
+ **co_firstlineno：代码块在对应文件的起始行** 
+
+```python
+def foo(a, b, *, c):
+    pass
+
+# 显然是文件的第一行
+# 或者理解为 def 所在的行
+print(foo.__code__.co_firstlineno)  # 1
+```
+
+
+
+ **co_names：符号表，一个元组，保存代码块中引用的其它作用域的变量** 
+
+```python
+c = 1
+
+def foo(a, b):
+    print(a, b, c)
+    d = (list, int, str)
+
+print(
+    foo.__code__.co_names
+)  # ('print', 'c', 'list', 'int', 'str')
+```
+
+
+
+ **co_varnames：符号表，一个元组，保存在当前作用域中的变量** 
+
+```python
+c = 1
+
+def foo(a, b):
+    print(a, b, c)
+    d = (list, int, str)
+print(foo.__code__.co_varnames)  # ('a', 'b', 'd')
+```
+
+
+
+ **co_consts：常量池，一个元组，保存代码块中的所有常量** 
+
+```python
+x = 123
+
+def foo(a, b):
+    c = "abc"
+    print(x)
+    print(True, False, list, [1, 2, 3], {"a": 1})
+    return ">>>"
+
+print(
+    foo.__code__.co_consts
+)  # (None, 'abc', True, False, 1, 2, 3, 'a', '>>>')
+```
+
+
+
+ **co_freevars：内层函数引用的外层函数的作用域中的变量** 
+
+```python
+def f1():
+    a = 1
+    b = 2
+    def f2():
+        print(a)
+    return f2
+
+# 这里拿到的是f2的字节码
+print(f1().__code__.co_freevars)  # ('a',)
+```
+
+
+
+ **co_cellvars：外层函数的作用域中被内层函数引用的变量，本质上和co_freevars是一样的** 
+
+```python
+def f1():    
+    a = 1
+    b = 2
+    def f2():
+        print(a)
+    return f2
+
+# 但这里调用的是f1的字节码
+print(f1.__code__.co_cellvars)  # ('a',)
+```
+
+
+
+ **co_filename：代码块所在的文件名** 
+
+```python
+def foo():
+    pass
+    
+print(foo.__code__.co_filename)  # D:/satori/main.py
+```
+
+
+
+ **co_name：代码块的名字** 
+
+```python
+def foo():
+    pass
+# 这里就是函数名
+print(foo.__code__.co_name)  # foo
+```
+
+
+
+ **co_code：字节码** 
+
+```python
+def foo(a, b, /, c, *, d, e):
+    f = 123
+    g = list()
+    g.extend([tuple, getattr, print])
+
+print(foo.__code__.co_code)
+#b'd\x01}\x05t\x00\x83\x00}\x06|\x06\xa0\x01t\x02t\x03t\x04g\x03\xa1\x01\x01\x00d\x00S\x00'
+```
+
+
+
+ **co_lnotab：字节码指令与源代码行号之间的对应关系，以PyByteObject的形式存在** 
+
+```python
+def foo(a, b, /, c, *, d, e):
+    f = 123
+    g = list()
+    g.extend([tuple, getattr, print])
+    
+print(foo.__code__.co_lnotab)  # b'\x00\x01\x04\x01\x06\x01'
+```
+
+
+
+## 编译
+
+ **eval：传入一个字符串，然后把字符串里面的内容拿出来。** 
+
+```python
+a = 1
+# 所以eval("a")就等价于a
+print(eval("a"))  # 1
+
+print(eval("1 + 1 + 1"))  # 3
+```
+
+ 注意：eval是有返回值的，返回值就是字符串里面内容。 
+
+
+
+ **exec：传入一个字符串，把字符串里面的内容当成语句来执行，这个是没有返回值的，或者说返回值是None。** 
+
+```python
+# 相当于 a = 1
+exec("a = 1")  
+print(a)  # 1
+
+statement = """
+a = 123
+if a == 123:
+    print("a等于123")
+else:
+    print("a不等于123")
+"""
+exec(statement)  # a等于123
+```
+
+
+
+ **compile：执行后返回的就是一个PyCodeObject对象。** 
+
+参数：
+
+1. 当成代码执行的字符串；
+2. 可以为这些代码起一个文件名；
+3. 执行方式，支持三种，分别是exec、single、eval 
+   1. exec：将源代码当做一个模块来编译；
+   2. single：用于编译一个单独的Python语句(交互式下)；
+   3. eval：用于编译一个eval表达式；
+
+
+
+
+
+## **字节码与反编译**
+
+操作指令 [跳转](Include\opcode.h)
+ 
+
+
+
+
+
 
 
 
