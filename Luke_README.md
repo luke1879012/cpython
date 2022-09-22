@@ -1606,9 +1606,9 @@ exec(statement)  # a等于123
 
 
 
+### 名字、作用域、名字空间
 
-
-
+ f_locals、f_globals、f_builtins 
 
 
 

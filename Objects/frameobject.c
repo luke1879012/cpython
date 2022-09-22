@@ -609,8 +609,11 @@ PyFrameObject* _Py_HOT_FUNCTION
 _PyFrame_New_NoTrack(PyThreadState *tstate, PyCodeObject *code,
                      PyObject *globals, PyObject *locals)
 {
+    // 上一级的栈帧，PyThreadState指的是线程对象
     PyFrameObject *back = tstate->frame;
+    // 当前栈帧
     PyFrameObject *f;
+    // builtin名字空间
     PyObject *builtins;
     Py_ssize_t i;
 

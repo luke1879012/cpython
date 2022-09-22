@@ -1141,6 +1141,7 @@ _PyEval_EvalFrameDefault(PyFrameObject *f, int throwflag)
     assert(PyBytes_GET_SIZE(co->co_code) <= INT_MAX);
     assert(PyBytes_GET_SIZE(co->co_code) % sizeof(_Py_CODEUNIT) == 0);
     assert(_Py_IS_ALIGNED(PyBytes_AS_STRING(co->co_code), sizeof(_Py_CODEUNIT)));
+    // 永远指向字节码指令序列的第一条字节码指令
     first_instr = (_Py_CODEUNIT *) PyBytes_AS_STRING(co->co_code);
     /*
        f->f_lasti refers to the index of the last instruction,
@@ -1161,6 +1162,7 @@ _PyEval_EvalFrameDefault(PyFrameObject *f, int throwflag)
     next_instr = first_instr;
     if (f->f_lasti >= 0) {
         assert(f->f_lasti % sizeof(_Py_CODEUNIT) == 0);
+        // 永远指向下一条待执行的字节码指令
         next_instr += f->f_lasti / sizeof(_Py_CODEUNIT) + 1;
     }
     stack_pointer = f->f_stacktop;
@@ -1212,7 +1214,11 @@ main_loop:
            Py_MakePendingCalls() above. */
 
         if (_Py_atomic_load_relaxed(eval_breaker)) {
+            // 读取下一条字节码指令
+            // 字节码指令位于: f->f_code->co_code
+            // 偏移量 f->f_lasti 决定
             opcode = _Py_OPCODE(*next_instr);
+            // opcode就是字节码指令序列中每一条指令
             if (opcode == SETUP_FINALLY ||
                 opcode == SETUP_WITH ||
                 opcode == BEFORE_ASYNC_WITH ||
@@ -1369,9 +1375,14 @@ main_loop:
         }
 
         case TARGET(LOAD_CONST): {
+            // 调用元组的GTEITEM方法
+            // 从常量池中加载索引为oparg的对象（常量）
             PREDICTED(LOAD_CONST);
             PyObject *value = GETITEM(consts, oparg);
+            // 增加引用计数
             Py_INCREF(value);
+            // 压入运行时栈
+            // 这个运行时栈位于栈帧对象的尾部
             PUSH(value);
             FAST_DISPATCH();
         }
@@ -1392,8 +1403,13 @@ main_loop:
         }
 
         case TARGET(ROT_TWO): {
+            // a, b = b, a 会用到
+            // 获取栈顶元素
             PyObject *top = TOP();
+            // 查看运行时栈的第二个元素
             PyObject *second = SECOND();
+            // 将栈顶设置为second
+            // 将栈的第二个元素设置为top
             SET_TOP(second);
             SET_SECOND(top);
             FAST_DISPATCH();
@@ -1488,11 +1504,15 @@ main_loop:
         }
 
         case TARGET(BINARY_POWER): {
+            // 从栈顶弹出元素
             PyObject *exp = POP();
+            // 获取栈顶元素(不弹出)
             PyObject *base = TOP();
+            // 进行幂运算
             PyObject *res = PyNumber_Power(base, exp, Py_None);
             Py_DECREF(base);
             Py_DECREF(exp);
+            // 将幂运算的结果再设置为栈顶
             SET_TOP(res);
             if (res == NULL)
                 goto error;
@@ -1500,8 +1520,11 @@ main_loop:
         }
 
         case TARGET(BINARY_MULTIPLY): {
+            // 从栈顶弹出元素
             PyObject *right = POP();
+            // 获取栈顶元素(不弹出)
             PyObject *left = TOP();
+            // 乘法运算
             PyObject *res = PyNumber_Multiply(left, right);
             Py_DECREF(left);
             Py_DECREF(right);
@@ -2315,21 +2338,41 @@ main_loop:
         }
 
         case TARGET(STORE_NAME): {
+            // 从符号表中加载索引为oparg的符号
+            // 符号本质上就是PyUnicodeObject对象
             PyObject *name = GETITEM(names, oparg);
+            // 从运行时栈的栈顶弹出元素
             PyObject *v = POP();
+            // 获取命名空间namespace
             PyObject *ns = f->f_locals;
             int err;
             if (ns == NULL) {
+                // 如果没有命名空间则报错
+                // 这个tstate是和线程密切相关的
                 _PyErr_Format(tstate, PyExc_SystemError,
                               "no locals found when storing %R", name);
                 Py_DECREF(v);
                 goto error;
             }
+            // 将符号和对象绑定起来放在ns中
+            // 名字空间是一个字典，PyDict_CheckExact则检测ns是否为字典
+            // 如果不是字典，那么其类对象一定要继承字典
             if (PyDict_CheckExact(ns))
+                // PyDict_CheckExact(ns)类似于type(ns) is dict
+                // 除此之外，还有PyDict_Check(ns)
+                // 它类似于isinstance(ns, dict)，检测标准相对要宽松一些
+                // 另外，底层的所有对象都有类似的检测逻辑
                 err = PyDict_SetItem(ns, name, v);
             else
+                // 走到这里说明type(ns)不是dict，那么它应该继承dict
+                // 如果不继承，err会返回非0
+                // 此时调用的是PyObject_SetItem，也就是自己实现的__setitem__
+                // 如果没有实现，并继承了字典，则最终调用的还是字典的__setitem__
                 err = PyObject_SetItem(ns, name, v);
+            
+            // 对象的引用计数减1，因为从运行时栈中弹出了
             Py_DECREF(v);
+            // err!=0，证明设置元素出错了，跳转至error标签
             if (err != 0)
                 goto error;
             DISPATCH();
