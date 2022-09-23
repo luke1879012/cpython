@@ -1438,8 +1438,11 @@ main_loop:
         }
 
         case TARGET(DUP_TOP): {
+            // 获取栈顶元素
             PyObject *top = TOP();
+            // 增加引用计数
             Py_INCREF(top);
+            // 压入栈中
             PUSH(top);
             FAST_DISPATCH();
         }
@@ -3064,16 +3067,21 @@ main_loop:
         }
 
         case TARGET(COMPARE_OP): {
+            // 弹出栈顶元素
             PyObject *right = POP();
             PyObject *left = TOP();
+            // 进行比较，比较结果为res
             PyObject *res = cmp_outcome(tstate, oparg, left, right);
+            // 减少left和right的引用计数
             Py_DECREF(left);
             Py_DECREF(right);
+            // 将栈顶的元素替换为res
             SET_TOP(res);
             if (res == NULL)
                 goto error;
             PREDICT(POP_JUMP_IF_FALSE);
             PREDICT(POP_JUMP_IF_TRUE);
+            // 相当于continue
             DISPATCH();
         }
 
@@ -5389,8 +5397,12 @@ static PyObject *
 cmp_outcome(PyThreadState *tstate, int op, PyObject *v, PyObject *w)
 {
     int res = 0;
+    // op 就是 COMPARE_OP 指令里面的操作数
     switch (op) {
+    // PyCmp_IS 是一个枚举变量，等于8
+    // 定义在 Include/opcode.h 中
     case PyCmp_IS:
+        // is 操作符
         res = (v == w);
         break;
     case PyCmp_IS_NOT:
@@ -5430,6 +5442,7 @@ cmp_outcome(PyThreadState *tstate, int op, PyObject *v, PyObject *w)
         res = PyErr_GivenExceptionMatches(v, w);
         break;
     default:
+        // == 操作符
         return PyObject_RichCompare(v, w, op);
     }
     v = res ? Py_True : Py_False;
