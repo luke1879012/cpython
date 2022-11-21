@@ -893,6 +893,7 @@ _PyEval_EvalFrameDefault(PyFrameObject *f, int throwflag)
 
 /* Tuple access macros */
 
+// 获取PyTupleObject对象中指定索引对应的元素
 #ifndef Py_DEBUG
 #define GETITEM(v, i) PyTuple_GET_ITEM((PyTupleObject *)(v), (i))
 #else
@@ -972,8 +973,11 @@ _PyEval_EvalFrameDefault(PyFrameObject *f, int throwflag)
 #define SET_THIRD(v)      (stack_pointer[-3] = (v))
 #define SET_FOURTH(v)     (stack_pointer[-4] = (v))
 #define SET_VALUE(n, v)   (stack_pointer[-(n)] = (v))
+// 调整栈顶指针，这个stack_pointer指向运行时栈的顶端
 #define BASIC_STACKADJ(n) (stack_pointer += n)
+// 入栈操作
 #define BASIC_PUSH(v)     (*stack_pointer++ = (v))
+// 出栈操作
 #define BASIC_POP()       (*--stack_pointer)
 
 #ifdef LLTRACE
@@ -2776,14 +2780,23 @@ main_loop:
         }
 
         case TARGET(BUILD_LIST): {
+            // oparg的含义取决于字节码指令
+            // LOAD_CONST中代表索引，这里则代表列表的容量
             PyObject *list =  PyList_New(oparg);
             if (list == NULL)
                 goto error;
+            // 从运行时栈里面将元素一个一个的弹出来
             while (--oparg >= 0) {
+                // 栈是先入后出结构
+                // 所以后面的值先赋值
                 PyObject *item = POP();
                 PyList_SET_ITEM(list, oparg, item);
             }
+            // 构建完毕之后，将其压入运行时栈
+            // 此时栈中只有一个PyListObject对象
+            // 因为之前LOAD进来的常量在构建列表的时候已经逐个POP了
             PUSH(list);
+            // 相当于continue
             DISPATCH();
         }
 
@@ -2954,23 +2967,37 @@ main_loop:
         }
 
         case TARGET(BUILD_CONST_KEY_MAP): {
+            // 循环变量
             Py_ssize_t i;
+            // PyDictObject对象指针
             PyObject *map;
+            // 从栈顶获取所有key，一个元组
             PyObject *keys = TOP();
+            // 如果keys不是一个元组
+            // 或者这个元组的ob_size不等于oparg
+            // 那么表示字典构建失败
             if (!PyTuple_CheckExact(keys) ||
                 PyTuple_GET_SIZE(keys) != (Py_ssize_t)oparg) {
                 _PyErr_SetString(tstate, PyExc_SystemError,
                                  "bad BUILD_CONST_KEY_MAP keys argument");
                 goto error;
             }
+            // 申请一个字典，至少能够容纳oparg个键值对
+            // 但是具体的容量肯定是要大于oparg的
             map = _PyDict_NewPresized((Py_ssize_t)oparg);
             if (map == NULL) {
                 goto error;
             }
+            // 依次设置键值对
             for (i = oparg; i > 0; i--) {
                 int err;
+                // 获取元组里面的元素，也就是key
+                // 注意这里是 oparg - i，i是从oparg开始，所以结果是从0开始
                 PyObject *key = PyTuple_GET_ITEM(keys, oparg - i);
+                // PEEK和TOP类似，都是获取元素但是不从栈里面删除
+                // TOP是专门获取栈顶元素，PEEK还可以获取栈的其它位置的元素
                 PyObject *value = PEEK(i + 1);
+                // 然后将entry设置在map里面
                 err = PyDict_SetItem(map, key, value);
                 if (err != 0) {
                     Py_DECREF(map);
@@ -2978,10 +3005,12 @@ main_loop:
                 }
             }
 
+            // 依次清空运行时栈，将栈里面的元素挨个弹出来
             Py_DECREF(POP());
             while (oparg--) {
                 Py_DECREF(POP());
             }
+            // 将构建的PyDictObject对象压入运行时栈
             PUSH(map);
             DISPATCH();
         }

@@ -408,7 +408,7 @@ app1(PyListObject *self, PyObject *v)
     if (list_resize(self, n+1) < 0)
         return -1;
 
-    // 因为v作为了列表的一个元素，所以其指向的独享的引用计数要加1
+    // 因为v作为了列表的一个元素，所以其指向的对象的引用计数要加1
     Py_INCREF(v);
     // 设置元素，原来的列表长度为n，最大索引是n-1
     // 那么追加的话等于将元素设置在索引为n的地方
