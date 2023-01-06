@@ -627,6 +627,7 @@ new_threadstate(PyInterpreterState *interp, int init)
     // 当前线程状态对象的 next
     // 我们看到指向了线程状态对象链表的头结点
     tstate->next = interp->tstate_head;
+    // 头插法
     if (tstate->next)
         // 因为每个线程状态对象的prev指针都指向上一个线程状态对象
         // 如果是头结点的话，那么prev就是 NULL
@@ -641,11 +642,12 @@ new_threadstate(PyInterpreterState *interp, int init)
     return tstate;
 }
 
-// 创建新城状态对象
+// 创建新线程状态对象
 PyThreadState *
 PyThreadState_New(PyInterpreterState *interp)
 {
     // 依赖于进程
+    // 这里1表示创建一个线程，即主线程
     return new_threadstate(interp, 1);
 }
 
@@ -987,6 +989,8 @@ _PyThreadState_Swap(struct _gilstate_runtime_state *gilstate, PyThreadState *new
 PyThreadState *
 PyThreadState_Swap(PyThreadState *newts)
 {
+    // 设置当前活动线程
+
     // 调用了_PyThreadState_Swap，里面传入了两个参数
     // 第一个，从名字看显然是和GIL相关的
     // 第二个参数就是新创建的线程状态对象

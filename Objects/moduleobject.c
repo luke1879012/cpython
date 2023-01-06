@@ -7,6 +7,7 @@
 
 static Py_ssize_t max_module_number;
 
+// [module] 2. PyModuleObject的结构体
 typedef struct {
     // 头部信息
     PyObject_HEAD
@@ -74,7 +75,7 @@ module_init_dict(PyModuleObject *mod, PyObject *md_dict,
     if (doc == NULL)
         doc = Py_None;
 
-    // 模块的一些属性、__name__、__doc__等等
+    // [module] 7.2. 模块的一些属性、__name__、__doc__等等
     if (_PyDict_SetItemId(md_dict, &PyId___name__, name) != 0)
         return -1;
     if (_PyDict_SetItemId(md_dict, &PyId___doc__, doc) != 0)
@@ -99,22 +100,24 @@ PyModule_NewObject(PyObject *name)
 {
     // module对象的指针
     PyModuleObject *m;
-    // 为module对象申请空间
+    // [module] 5. 为module对象申请空间
     // 模块具有属性字典，所以是一个变长对象
     m = PyObject_GC_New(PyModuleObject, &PyModule_Type);
     if (m == NULL)
         return NULL;
-    // 设置相应属性，初始化为NULL
+    // [module] 6. 设置相应属性，初始化为NULL
     m->md_def = NULL;
     m->md_state = NULL;
     m->md_weaklist = NULL;
     m->md_name = NULL;
     // 属性字典
     m->md_dict = PyDict_New();
-    // 调用module_init_dict
+    // [module] 7. 调用module_init_dict
+    // [module] 7.1. 初始化module
     if (module_init_dict(m, m->md_dict, name, NULL) != 0)
         goto fail;
     PyObject_GC_Track(m);
+    // [module] 8. 新建结束，返回
     return (PyObject *)m;
 
  fail:
@@ -125,12 +128,14 @@ PyModule_NewObject(PyObject *name)
 PyObject *
 PyModule_New(const char *name)
 {
+    // [module] 3. 创建PyModuleObject的函数
     // module对象的name、PyModuleObject *
     PyObject *nameobj, *module;
     nameobj = PyUnicode_FromString(name);
     if (nameobj == NULL)
         return NULL;
     // 创建 PyModuleObject
+    // [module] 4. 核心函数
     module = PyModule_NewObject(nameobj);
     Py_DECREF(nameobj);
     return module;
@@ -170,6 +175,8 @@ _add_methods_to_object(PyObject *module, PyObject *name, PyMethodDef *functions)
                             " METH_CLASS or METH_STATIC");
             return -1;
         }
+        // [module] 13.2. 调用PyCFunction_NewEx函数，创建PyCFunctionObject对象
+        // [PyCFunctionObject] 3.1. module中使用
         func = PyCFunction_NewEx(fdef, (PyObject*)module, name);
         if (func == NULL) {
             return -1;
@@ -195,6 +202,7 @@ PyModule_Create2(struct PyModuleDef* module, int module_api_version)
 PyObject *
 _PyModule_CreateInitialized(struct PyModuleDef* module, int module_api_version)
 {
+    // [builtin] 2.2. 设置dir、hasattr、setattr 等，完成__builtin__大部分设置工作
     const char* name;
     PyModuleObject *m;
 
@@ -209,6 +217,7 @@ _PyModule_CreateInitialized(struct PyModuleDef* module, int module_api_version)
     // 会直接从当前目录的__pycache__里面导入，那里都是pyc文件
     // 而pyc文件的文件名是有Python解释器的版本号的
     // 这里就是比较版本是否一致，不一致则不导入pyc文件，而是会重新编译py文件
+    // [builtin] 2.3. 检测缓存
     if (!check_api_version(name, module_api_version)) {
         return NULL;
     }
@@ -234,11 +243,13 @@ _PyModule_CreateInitialized(struct PyModuleDef* module, int module_api_version)
             _Py_PackageContext = NULL;
         }
     }
-    // 创建一个PyModuleObject
+    // [builtin] 2.4. 创建一个PyModuleObject
+    // [module] 1. PyModuleObject的创建
     if ((m = (PyModuleObject*)PyModule_New(name)) == NULL)
         return NULL;
 
     if (module->m_size > 0) {
+        // 分配内存
         m->md_state = PyMem_MALLOC(module->m_size);
         if (!m->md_state) {
             PyErr_NoMemory();
@@ -249,7 +260,8 @@ _PyModule_CreateInitialized(struct PyModuleDef* module, int module_api_version)
     }
 
     if (module->m_methods != NULL) {
-        // 遍历methods中指定的module对象中应包含的操作集合
+        // [builtin] 2.5. 遍历methods中指定的module对象中应包含的操作集合
+        // [module] 9. PyModule_AddFunctions设置大部分的module属性
         if (PyModule_AddFunctions((PyObject *) m, module->m_methods) != 0) {
             Py_DECREF(m);
             return NULL;
@@ -474,6 +486,7 @@ PyModule_AddFunctions(PyObject *m, PyMethodDef *functions)
         return -1;
     }
 
+    // [module] 13.1. _add_methods_to_object中，PyMethodDef创建PyCFunctionObject对象
     res = _add_methods_to_object(m, name, functions);
     Py_DECREF(name);
     return res;

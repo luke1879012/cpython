@@ -3005,6 +3005,7 @@ PyTypeObject PyZip_Type = {
 
 
 static PyMethodDef builtin_methods[] = {
+    // [builtin] 2.8. 内置底层函数
     // __build_class__ 对应的底层函数
     {"__build_class__", (PyCFunction)(void(*)(void))builtin___build_class__,
      METH_FASTCALL | METH_KEYWORDS, build_class_doc},
@@ -3062,6 +3063,7 @@ static struct PyModuleDef builtinsmodule = {
     "builtins",
     builtin_doc,
     -1, /* multiple "initialization" just copies the module dict. */
+    // [builtin] 2.7. 所以m_methods对应的是builtin_methods
     builtin_methods,
     NULL,
     NULL,
@@ -3069,7 +3071,7 @@ static struct PyModuleDef builtinsmodule = {
     NULL
 };
 
-
+// [builtin] 1.1. 初始化
 PyObject *
 _PyBuiltin_Init(void)
 {
@@ -3082,7 +3084,9 @@ _PyBuiltin_Init(void)
         PyType_Ready(&PyZip_Type) < 0)
         return NULL;
 
-    // 创建并设置 __builtins__
+    // [builtin] 2. 创建并设置 __builtins__
+    // [builtin] 2.1. 进入_PyModule_CreateInitialized这个初始化看看
+    // [builtin] 2.6. 传参是builtinsmodule
     mod = _PyModule_CreateInitialized(&builtinsmodule, PYTHON_API_VERSION);
     if (mod == NULL)
         return NULL;
@@ -3101,7 +3105,7 @@ _PyBuiltin_Init(void)
 #define ADD_TO_ALL(OBJECT) (void)0
 #endif
 
-// 将所有内置对象加入到 __builtins__ 中
+// [builtin] 3. 将所有内置对象加入到 __builtins__ 中
 #define SETBUILTIN(NAME, OBJECT) \
     if (PyDict_SetItemString(dict, NAME, (PyObject *)OBJECT) < 0)       \
         return NULL;                                                    \

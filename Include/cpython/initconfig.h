@@ -258,6 +258,13 @@ typedef struct {
        Incremented by the -O command line option. Set by the PYTHONOPTIMIZE
        environment variable. If set to -1 (default), inherit Py_OptimizeFlag
        value. */
+    /* 优化等级
+      
+      由-O命令行选项递增。由PYTHONOPTIMIZE环境变量设置。
+      如果设置为-1（默认值），则继承Py_OptimizeFlag值。
+    */
+   // -1: 默认值
+   // 0: debug模式
     int optimization_level;
 
     /* If greater than 0, enable the debug mode: turn on parser debugging

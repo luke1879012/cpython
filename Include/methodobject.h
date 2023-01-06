@@ -48,6 +48,8 @@ PyAPI_FUNC(PyObject *) _PyCFunction_FastCallDict(PyObject *func,
     PyObject *kwargs);
 #endif
 
+// [module] 12. module->m_methods 的结构体
+// [module] 13. 每一个PyMethodDef，都会基于它创建一个PyCFunctionObject对象
 struct PyMethodDef {
     // 内置函数的名称
     const char  *ml_name;   /* The name of the built-in function/method */
@@ -106,6 +108,8 @@ PyAPI_FUNC(PyObject *) PyCFunction_NewEx(PyMethodDef *, PyObject *,
 #endif
 
 #ifndef Py_LIMITED_API
+// [module] 14. PyCFunctionObject的结构体
+// [PyCFunctionObject] 1. PyCFunctionObject的结构体
 typedef struct {
     // 头部信息
     PyObject_HEAD

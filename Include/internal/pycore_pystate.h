@@ -99,9 +99,12 @@ struct _is {
 
     int finalizing;
 
+    // 所有模块
     PyObject *modules;
     PyObject *modules_by_index;
+    // sys模块
     PyObject *sysdict;
+    // 内置模块
     PyObject *builtins;
     PyObject *importlib;
 
@@ -129,6 +132,7 @@ struct _is {
         _Py_error_handler error_handler;
     } fs_codec;
 
+    // 配置信息
     PyConfig config;
 #ifdef HAVE_DLOPEN
     int dlopenflags;

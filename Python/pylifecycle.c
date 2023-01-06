@@ -1393,9 +1393,10 @@ Py_Finalize(void)
 static PyStatus
 new_interpreter(PyThreadState **tstate_p)
 {
+    // [启动] 2. 调用此函数
     PyStatus status;
 
-    // 运行时初始化，如果出现异常直接返回
+    // [启动] 3. 运行时初始化，如果出现异常直接返回
     status = _PyRuntime_Initialize();
     if (_PyStatus_EXCEPTION(status)) {
         return status;
@@ -1410,14 +1411,14 @@ new_interpreter(PyThreadState **tstate_p)
        interpreters: disable PyGILState_Check(). */
     _PyGILState_check_enabled = 0;
 
-    // 创建一个进程状态对象
+    // [启动] 4. 创建一个进程状态对象
     PyInterpreterState *interp = PyInterpreterState_New();
     if (interp == NULL) {
         *tstate_p = NULL;
         return _PyStatus_OK();
     }
 
-    // 根据进程状态对象创建一个线程状态对象
+    // [启动] 5. 根据进程状态对象创建一个线程状态对象
     // 维护对应OS线程的状态
     PyThreadState *tstate = PyThreadState_New(interp);
     if (tstate == NULL) {
@@ -1426,10 +1427,11 @@ new_interpreter(PyThreadState **tstate_p)
         return _PyStatus_OK();
     }
 
-    // 将GIL的控制权交给创建的线程
+    // [启动] 6. 将GIL的控制权交给创建的线程
     PyThreadState *save_tstate = PyThreadState_Swap(tstate);
 
     /* Copy the current interpreter config into the new interpreter */
+    /* 将当前解释器配置复制到新解释器中 */
     PyConfig *config;
     if (save_tstate != NULL) {
         config = &save_tstate->interp->config;
@@ -1467,15 +1469,17 @@ new_interpreter(PyThreadState **tstate_p)
     // 显然是该进程内的多个线程共享同一个 sys.modules
     interp->modules = modules;
 
+    // [启动] 7. 加载模块
     // 加载sys模块，所有的module对象都在sys.modules中
     PyObject *sysmod = _PyImport_FindBuiltin("sys", modules);
     if (sysmod != NULL) {
+        // 和下面的builtins一样，获取属性字典，赋值给sysdict（加速机制）
         interp->sysdict = PyModule_GetDict(sysmod);
         if (interp->sysdict == NULL) {
             goto handle_error;
         }
         Py_INCREF(interp->sysdict);
-        // 设置
+        // 设置所有模块
         PyDict_SetItemString(interp->sysdict, "modules", modules);
         if (_PySys_InitMain(runtime, interp) < 0) {
             return _PyStatus_ERR("can't finish initializing sys");
@@ -1485,7 +1489,7 @@ new_interpreter(PyThreadState **tstate_p)
         goto handle_error;
     }
 
-    // 加载内置模块 buildtins
+    // [builtin] 1.0. 加载内置模块 buildtins
     // 可以import builtins，并且builtins.list 等价于 list
     PyObject *bimod = _PyImport_FindBuiltin("builtins", modules);
     if (bimod != NULL) {
@@ -1536,14 +1540,14 @@ new_interpreter(PyThreadState **tstate_p)
             return status;
         }
 
-        // 设置搜多module时的默认路径集合
+        // [module] 15. 设置搜索module时的默认路径集合
         status = add_main_module(interp);
         if (_PyStatus_EXCEPTION(status)) {
             return status;
         }
 
         if (config->site_import) {
-            // 导入第三方包
+            // [第三方模块] 1. 导入第三方包
             status = init_import_size();
             if (_PyStatus_EXCEPTION(status)) {
                 return status;
@@ -1555,6 +1559,7 @@ new_interpreter(PyThreadState **tstate_p)
         goto handle_error;
     }
 
+    // [启动] 8. 初始化成功
     *tstate_p = tstate;
     return _PyStatus_OK();
 
@@ -1574,6 +1579,7 @@ handle_error:
 PyThreadState *
 Py_NewInterpreter(void)
 {
+    // [启动] 1. 初始化
     // 线程状态对象
     PyThreadState *tstate = NULL;
     // 传入线程对象，调用new_interpreter
@@ -1630,7 +1636,7 @@ static PyStatus
 add_main_module(PyInterpreterState *interp)
 {
     PyObject *m, *d, *loader, *ann_dict;
-    // 将__main__添加进sys.modules中
+    // [module] 16. 将__main__添加进sys.modules中
     // 创建 __main__ module，并将其加入到 interp->modules 中
     m = PyImport_AddModule("__main__");
     if (m == NULL)
@@ -1638,6 +1644,7 @@ add_main_module(PyInterpreterState *interp)
 
     // 获取__main__的属性字典
     d = PyModule_GetDict(m);
+    // 设置注解
     ann_dict = PyDict_New();
     if ((ann_dict == NULL) ||
         (PyDict_SetItemString(d, "__annotations__", ann_dict) < 0)) {
@@ -1686,7 +1693,8 @@ static PyStatus
 init_import_size(void)
 {
     PyObject *m;
-    // 核心调用方法
+    // [第三方模块] 2. 核心调用方法
+    // PyImport_ImportModule("numpy") 等价于 import numpy
     m = PyImport_ImportModule("site");
     if (m == NULL) {
         return _PyStatus_ERR("Failed to import the site module");
